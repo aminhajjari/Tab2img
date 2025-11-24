@@ -21,19 +21,18 @@ import scipy.io.arff as arff
 
 # Argument parser
 parser = argparse.ArgumentParser(description="Welcome to Table2Image")
-parser.add_argument('--data', type=str, required=True, 
+parser.add_argument('--csv', type=str, required=True, 
                    help='Path to the dataset (csv/arff/data)')
-# Then change: data_path = args.data
-parser.add_argument('--save_dir', type=str, required=True, help='Path to save the final model')
+parser.add_argument('--save_dir', type=str, required=True, 
+                   help='Path to save the final model')
 args = parser.parse_args()
-
 
 # Parameters
 EPOCH = 50
 BATCH_SIZE = 64
 
-csv_path = args.csv  # 
-file_name = os.path.splitext(os.path.basename(csv_path))[0]  # 
+csv_path = args.csv
+file_name = os.path.splitext(os.path.basename(csv_path))[0]
 saving_path = args.save_dir + '.pt'
 
 # ========== DATA LOADING FUNCTION ==========
