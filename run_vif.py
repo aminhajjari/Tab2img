@@ -32,7 +32,7 @@ EPOCH = 50
 BATCH_SIZE = 64
 
 csv_path = args.csv
-file_name = os.path.splitext(os.path.basename(csv_path))[0]
+file_name = os.path.splitext(os.path.basename(csv_path))[0]  # ✅
 saving_path = args.save_dir + '.pt'
 
 # ========== DATA LOADING FUNCTION ==========
