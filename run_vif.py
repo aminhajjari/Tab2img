@@ -21,7 +21,9 @@ import scipy.io.arff as arff
 
 # Argument parser
 parser = argparse.ArgumentParser(description="Welcome to Table2Image")
-parser.add_argument('--csv', type=str, required=True, help='Path to the dataset (csv)')
+parser.add_argument('--data', type=str, required=True, 
+                   help='Path to the dataset (csv/arff/data)')
+# Then change: data_path = args.data
 parser.add_argument('--save_dir', type=str, required=True, help='Path to save the final model')
 args = parser.parse_args()
 
@@ -30,7 +32,7 @@ EPOCH = 50
 BATCH_SIZE = 64
 
 csv_path = args.csv
-file_name = os.path.basename(csv_path).replace('.csv', '')
+file_name = os.path.splitext(os.path.basename(csv_path))[0]  # Works for .csv, .arff, .data
 saving_path = args.save_dir + '.pt'
 
 # ========== DATA LOADING FUNCTION ==========
@@ -132,7 +134,10 @@ else:
 
 num_classes = len(unique_values)
 print(f"[INFO] Detected {num_classes} unique classes: {unique_values}")
-
+if num_classes > 20:
+    print(f"[ERROR] Dataset has {num_classes} classes (>20). Table2Image only supports up to 20 classes.")
+    print(f"[INFO] Skipping this dataset...")
+    exit(1)  # Exit gracefully
 # Drop target to get features
 X = df.drop(columns=[target_col]).values
 
