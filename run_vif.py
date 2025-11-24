@@ -27,12 +27,13 @@ parser.add_argument('--data', type=str, required=True,
 parser.add_argument('--save_dir', type=str, required=True, help='Path to save the final model')
 args = parser.parse_args()
 
+
 # Parameters
 EPOCH = 50
 BATCH_SIZE = 64
 
-csv_path = args.csv
-file_name = os.path.splitext(os.path.basename(csv_path))[0]  # Works for .csv, .arff, .data
+csv_path = args.csv  # 
+file_name = os.path.splitext(os.path.basename(csv_path))[0]  # 
 saving_path = args.save_dir + '.pt'
 
 # ========== DATA LOADING FUNCTION ==========
