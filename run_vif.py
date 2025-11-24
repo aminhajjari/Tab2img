@@ -21,8 +21,9 @@ import scipy.io.arff as arff
 
 # Argument parser
 parser = argparse.ArgumentParser(description="Welcome to Table2Image")
-parser.add_argument('--csv', type=str, required=True, 
+parser.add_argument('--data', type=str, required=True, 
                    help='Path to the dataset (csv/arff/data)')
+
 parser.add_argument('--save_dir', type=str, required=True, 
                    help='Path to save the final model')
 args = parser.parse_args()
