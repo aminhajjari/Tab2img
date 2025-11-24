@@ -90,37 +90,22 @@ def load_dataset(file_path):
         raise ValueError(f"Unsupported file format: {file_ext}")
 
 # ========== LOAD AND PREPROCESS TABULAR DATA ==========
+# ========== LOAD AND PREPROCESS TABULAR DATA ==========
 print(f"[INFO] Loading dataset: {data_path}")
 df = load_dataset(data_path)
+
 # Handle missing values (common in OpenML datasets)
-# Line 100: (KEEP THIS - already exists)
 df = df.replace(['?', '', ' ', 'nan', 'NaN'], np.nan)
 
-# ========== STEP 1: Drop columns with >50% missing (BASE PAPER) ==========
-missing_threshold = 0.5
-missing_pct = df.isnull().sum() / len(df)
-cols_to_drop = missing_pct[missing_pct > missing_threshold].index.tolist()
-
-# Protect target column
-if target_col in cols_to_drop:
-    cols_to_drop.remove(target_col)
-
-if cols_to_drop:
-    print(f"[INFO] Dropping {len(cols_to_drop)} columns with >{missing_threshold*100}% missing data")
-    df = df.drop(columns=cols_to_drop)
-    print(f"[INFO] New shape after dropping: {df.shape}")
-# ========== END STEP 1 ==========
-
-# Line 102-104: (KEEP THIS - already exists)
 print(f"[INFO] Dataset shape: {df.shape}")
 print(f"[INFO] Columns: {df.columns.tolist()[:10]}")
 
-# Automatically detect the target column
+# ========== Automatically detect the target column ==========
 target_col_candidates = [
     'target', 'class', 'outcome', 'Class', 'binaryClass', 'status', 'Target',
     'TR', 'speaker', 'Home/Away', 'Outcome', 'Leaving_Certificate', 'technology',
     'signal', 'label', 'Label', 'click', 'percent_pell_grant', 'Survival',
-    'diagnosis', 'y'  # Added 'y'
+    'diagnosis', 'y'
 ]
 
 # Check for named target columns first
@@ -138,7 +123,22 @@ if target_col is None:
 
 print(f"[INFO] Target column: {target_col}")
 
-# Handle non-numeric target labels
+# ========== STEP 1: Drop columns with >50% missing (BASE PAPER) ==========
+missing_threshold = 0.5
+missing_pct = df.isnull().sum() / len(df)
+cols_to_drop = missing_pct[missing_pct > missing_threshold].index.tolist()
+
+# Protect target column
+if target_col in cols_to_drop:
+    cols_to_drop.remove(target_col)
+
+if cols_to_drop:
+    print(f"[INFO] Dropping {len(cols_to_drop)} columns with >{missing_threshold*100}% missing data")
+    df = df.drop(columns=cols_to_drop)
+    print(f"[INFO] New shape after dropping: {df.shape}")
+# ========== END STEP 1 ==========
+
+# ========== Handle non-numeric target labels ==========
 if df[target_col].dtype == 'object' or not np.issubdtype(df[target_col].dtype, np.number):
     print(f"[INFO] Converting string labels in '{target_col}' to integers...")
     from sklearn.preprocessing import LabelEncoder
@@ -151,10 +151,35 @@ else:
 
 num_classes = len(unique_values)
 print(f"[INFO] Detected {num_classes} unique classes: {unique_values}")
+
 if num_classes > 20:
     print(f"[ERROR] Dataset has {num_classes} classes (>20). Table2Image only supports up to 20 classes.")
     print(f"[INFO] Skipping this dataset...")
-    exit(1)  # Exit gracefully
+    exit(1)
+
+# ========== STEP 3: Impute with MEDIAN (BASE PAPER) ==========
+X_df = df.drop(columns=[target_col])
+
+# Convert to numeric (categorical → numeric encoding)
+for col in X_df.columns:
+    if X_df[col].dtype == 'object':
+        # Encode categorical as numeric
+        from sklearn.preprocessing import LabelEncoder
+        le = LabelEncoder()
+        X_df[col] = le.fit_transform(X_df[col].astype(str))
+    else:
+        # Already numeric, just ensure it's float
+        X_df[col] = pd.to_numeric(X_df[col], errors='coerce')
+
+# Impute missing values with MEDIAN (not 0!)
+for col in X_df.columns:
+    if X_df[col].isnull().any():
+        median_val = X_df[col].median()
+        X_df[col].fillna(median_val, inplace=True)
+        print(f"[INFO] Imputed {col} with median={median_val:.4f}")
+
+X = X_df.values
+# ========== END STEP 3 ==========
 
 # Mapping labels for classes
 unique_values = sorted(set(y))
