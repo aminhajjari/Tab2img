@@ -23,7 +23,6 @@ import scipy.io.arff as arff
 parser = argparse.ArgumentParser(description="Welcome to Table2Image")
 parser.add_argument('--data', type=str, required=True, 
                    help='Path to the dataset (csv/arff/data)')
-
 parser.add_argument('--save_dir', type=str, required=True, 
                    help='Path to save the final model')
 args = parser.parse_args()
@@ -32,7 +31,7 @@ args = parser.parse_args()
 EPOCH = 50
 BATCH_SIZE = 64
 
-csv_path = args.csv
+data_path = args.data
 file_name = os.path.splitext(os.path.basename(csv_path))[0]  # ✅
 saving_path = args.save_dir + '.pt'
 
@@ -91,9 +90,8 @@ def load_dataset(file_path):
         raise ValueError(f"Unsupported file format: {file_ext}")
 
 # ========== LOAD AND PREPROCESS TABULAR DATA ==========
-print(f"[INFO] Loading dataset: {csv_path}")
-df = load_dataset(csv_path)  # 🔥 Auto-detect format
-
+print(f"[INFO] Loading dataset: {data_path}")
+df = load_dataset(data_path)
 # Handle missing values (common in OpenML datasets)
 df = df.replace(['?', '', ' ', 'nan', 'NaN'], np.nan)
 
