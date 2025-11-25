@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Batch processor for Table2Image across all OpenML datasets
-Automatically discovers and processes datasets in folder structure
+Organized output structure with separate folders for models, CSVs, logs, and LaTeX
 """
 
 import os
@@ -13,6 +13,41 @@ import time
 from pathlib import Path
 import pandas as pd
 from datetime import datetime
+
+def create_output_structure(base_output_dir, job_id):
+    """
+    Create organized folder structure for results
+    """
+    timestamp = datetime.now().strftime("%Y%m%d")
+    run_name = f"{timestamp}_JOB{job_id}"
+    
+    run_dir = os.path.join(base_output_dir, run_name)
+    
+    # Create subdirectories
+    subdirs = {
+        'models': os.path.join(run_dir, 'models'),
+        'csv': os.path.join(run_dir, 'csv'),
+        'latex': os.path.join(run_dir, 'latex'),
+        'logs': os.path.join(run_dir, 'logs')
+    }
+    
+    for subdir in subdirs.values():
+        os.makedirs(subdir, exist_ok=True)
+    
+    # Create README with run information
+    readme_path = os.path.join(run_dir, 'README.txt')
+    with open(readme_path, 'w') as f:
+        f.write(f"Table2Image Batch Processing Results\n")
+        f.write(f"="*50 + "\n\n")
+        f.write(f"Job ID: {job_id}\n")
+        f.write(f"Started: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+        f.write(f"\nFolder Structure:\n")
+        f.write(f"  models/  - Trained PyTorch models (.pt files)\n")
+        f.write(f"  csv/     - Results in CSV format\n")
+        f.write(f"  latex/   - LaTeX tables for paper\n")
+        f.write(f"  logs/    - Processing logs (JSONL format)\n")
+    
+    return run_dir, subdirs
 
 def find_datasets(datasets_dir):
     """
@@ -42,24 +77,20 @@ def find_datasets(datasets_dir):
     
     return dataset_files
 
-def run_single_dataset(dataset_path, output_dir, script_path, epochs, batch_size, 
-                       dataset_root, timeout):
+def run_single_dataset(dataset_path, subdirs, script_path, timeout):
     """
     Run Table2Image on a single dataset
     """
     # Use folder name as dataset name (not filename)
     dataset_name = dataset_path.parent.name
-    output_path = os.path.join(output_dir, 'models', dataset_name)
+    output_path = os.path.join(subdirs['models'], dataset_name)
     
     print(f"\n{'='*70}")
     print(f"Processing: {dataset_name}")
     print(f"{'='*70}")
     print(f"Folder: {dataset_path.parent.name}")
     print(f"File: {dataset_path.name}")
-    print(f"Output: {output_path}")
-    
-    # Create output directory
-    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    print(f"Output: {output_path}.pt")
     
     # Build command
     cmd = [
@@ -91,7 +122,6 @@ def run_single_dataset(dataset_path, output_dir, script_path, epochs, batch_size
             }
         else:
             print(f"❌ FAILED (exit code {result.returncode})")
-            # Print last part of stderr for debugging
             stderr_preview = result.stderr[-1000:] if result.stderr else "No error output"
             print(f"Error preview:\n{stderr_preview}")
             return {
@@ -121,11 +151,11 @@ def run_single_dataset(dataset_path, output_dir, script_path, epochs, batch_size
             'error': str(e)
         }
 
-def parse_results_jsonl(output_dir):
+def parse_results_jsonl(subdirs):
     """
     Parse results.jsonl and create summary DataFrame
     """
-    results_file = os.path.join(output_dir, 'results.jsonl')
+    results_file = os.path.join(subdirs['logs'], 'results.jsonl')
     
     if not os.path.exists(results_file):
         print(f"[WARNING] No results file found at {results_file}")
@@ -152,7 +182,7 @@ def parse_results_jsonl(output_dir):
     
     return df
 
-def create_summary_tables(df, output_dir):
+def create_summary_tables(df, subdirs, run_dir):
     """
     Create CSV and LaTeX summary tables with average accuracy
     """
@@ -166,20 +196,47 @@ def create_summary_tables(df, output_dir):
         'best_accuracy', 'best_auc', 'best_epoch'
     ]].copy()
     
-    # Calculate averages
+    # Calculate statistics
     avg_accuracy = summary_df['best_accuracy'].mean()
     avg_auc = summary_df['best_auc'].mean()
+    std_accuracy = summary_df['best_accuracy'].std()
+    std_auc = summary_df['best_auc'].std()
     
-    # ========== CSV Summary ==========
-    csv_path = os.path.join(output_dir, 'results_summary.csv')
-    summary_df.to_csv(csv_path, index=False)
-    print(f"\n✅ CSV summary saved to: {csv_path}")
+    # ========== 1. RESULTS SUMMARY CSV ==========
+    csv_summary_path = os.path.join(subdirs['csv'], 'results_summary.csv')
+    summary_df.to_csv(csv_summary_path, index=False)
+    print(f"\n✅ Results summary: {csv_summary_path}")
     
-    # ========== LaTeX Table (Paper Format) ==========
-    latex_path = os.path.join(output_dir, 'results_latex.txt')
+    # ========== 2. DETAILED RESULTS CSV ==========
+    csv_detailed_path = os.path.join(subdirs['csv'], 'results_detailed.csv')
+    df.to_csv(csv_detailed_path, index=False)
+    print(f"✅ Detailed results: {csv_detailed_path}")
+    
+    # ========== 3. STATISTICS CSV ==========
+    stats_data = {
+        'Metric': ['Average Accuracy', 'Std Accuracy', 'Average AUC', 'Std AUC',
+                   'Best Accuracy', 'Worst Accuracy', 'Datasets >90%', 'Datasets >95%'],
+        'Value': [
+            f"{avg_accuracy:.2f}",
+            f"{std_accuracy:.2f}",
+            f"{avg_auc:.4f}",
+            f"{std_auc:.4f}",
+            f"{summary_df['best_accuracy'].max():.2f}",
+            f"{summary_df['best_accuracy'].min():.2f}",
+            len(summary_df[summary_df['best_accuracy'] > 90]),
+            len(summary_df[summary_df['best_accuracy'] > 95])
+        ]
+    }
+    stats_df = pd.DataFrame(stats_data)
+    csv_stats_path = os.path.join(subdirs['csv'], 'statistics.csv')
+    stats_df.to_csv(csv_stats_path, index=False)
+    print(f"✅ Statistics: {csv_stats_path}")
+    
+    # ========== 4. LATEX TABLE (Top 20) ==========
+    latex_path = os.path.join(subdirs['latex'], 'results_latex.txt')
     with open(latex_path, 'w') as f:
         f.write("% LaTeX Table for Paper - Table2Image Results\n")
-        f.write("% Use this in your IEEE paper\n\n")
+        f.write("% Top 20 datasets + average\n\n")
         
         f.write("\\begin{table}[htbp]\n")
         f.write("\\centering\n")
@@ -187,14 +244,14 @@ def create_summary_tables(df, output_dir):
         f.write("\\label{tab:results}\n")
         f.write("\\begin{tabular}{lrrrccc}\n")
         f.write("\\hline\n")
-        f.write("\\textbf{Dataset} & \\textbf{Samples} & \\textbf{Features} & "
-                "\\textbf{Classes} & \\textbf{Accuracy} & \\textbf{AUC} & \\textbf{Epoch} \\\\\n")
+        f.write("\\textbf{Dataset} & \\textbf{N} & \\textbf{Features} & "
+                "\\textbf{Classes} & \\textbf{Acc (\\%)} & \\textbf{AUC} & \\textbf{Epoch} \\\\\n")
         f.write("\\hline\n")
         
-        # Write top 20 datasets (or all if less than 20)
+        # Top 20 datasets
         top_n = min(20, len(summary_df))
         for idx, row in summary_df.head(top_n).iterrows():
-            dataset_name = row['dataset'].replace('_', '\\_')  # Escape underscores
+            dataset_name = row['dataset'].replace('_', '\\_')
             f.write(f"{dataset_name} & "
                    f"{row['num_samples']:,} & "
                    f"{row['num_features']} & "
@@ -204,29 +261,29 @@ def create_summary_tables(df, output_dir):
                    f"{row['best_epoch']} \\\\\n")
         
         if len(summary_df) > top_n:
-            f.write(f"\\multicolumn{{7}}{{c}}{{... and {len(summary_df) - top_n} more datasets}} \\\\\n")
+            f.write(f"\\multicolumn{{7}}{{c}}{{\\textit{{... {len(summary_df) - top_n} more datasets}}}} \\\\\n")
         
         f.write("\\hline\n")
         f.write(f"\\textbf{{Average}} & "
                f"- & - & - & "
-               f"\\textbf{{{avg_accuracy:.2f}}} & "
-               f"\\textbf{{{avg_auc:.4f}}} & "
+               f"\\textbf{{{avg_accuracy:.2f}}} $\\pm$ {std_accuracy:.2f} & "
+               f"\\textbf{{{avg_auc:.4f}}} $\\pm$ {std_auc:.4f} & "
                f"- \\\\\n")
         f.write("\\hline\n")
         f.write("\\end{tabular}\n")
         f.write("\\end{table}\n")
     
-    print(f"✅ LaTeX table saved to: {latex_path}")
+    print(f"✅ LaTeX table: {latex_path}")
     
-    # ========== Comparison Table (for paper) ==========
-    comparison_path = os.path.join(output_dir, 'comparison_table.txt')
+    # ========== 5. COMPARISON TABLE ==========
+    comparison_path = os.path.join(subdirs['latex'], 'comparison_table.txt')
     with open(comparison_path, 'w') as f:
         f.write("% Comparison with Other Methods (Table 1 format from paper)\n")
-        f.write("% Add your baseline results to compare\n\n")
+        f.write("% Fill in baseline results from the paper\n\n")
         
         f.write("\\begin{table}[htbp]\n")
         f.write("\\centering\n")
-        f.write("\\caption{Performance Comparison on OpenML-CC18 Benchmark}\n")
+        f.write("\\caption{Performance Comparison on OpenML-CC18}\n")
         f.write("\\label{tab:comparison}\n")
         f.write("\\begin{tabular}{lcc}\n")
         f.write("\\hline\n")
@@ -238,40 +295,47 @@ def create_summary_tables(df, output_dir):
                f"\\textbf{{{avg_accuracy:.2f}}} & "
                f"\\textbf{{{avg_auc:.4f}}} \\\\\n")
         
-        # Placeholder for baselines (user should fill these in)
+        # From paper Table 1 (OpenML-CC18 results)
         f.write("\\hline\n")
-        f.write("XGBoost & [TODO] & [TODO] \\\\\n")
-        f.write("LightGBM & [TODO] & [TODO] \\\\\n")
-        f.write("CatBoost & [TODO] & [TODO] \\\\\n")
-        f.write("FT-Transformer & [TODO] & [TODO] \\\\\n")
-        f.write("TabPFN & [TODO] & [TODO] \\\\\n")
-        f.write("TuneTables & [TODO] & [TODO] \\\\\n")
-        f.write("TabM & [TODO] & [TODO] \\\\\n")
+        f.write("Table2Image (baseline) & 87.66 & 0.9202 \\\\\n")
+        f.write("XGBoost & 86.75 & 0.8758 \\\\\n")
+        f.write("LightGBM & 86.12 & 0.9116 \\\\\n")
+        f.write("CatBoost & 86.26 & 0.9146 \\\\\n")
+        f.write("FT-Transformer & 83.13 & 0.9016 \\\\\n")
+        f.write("TuneTables & 86.50 & 0.9145 \\\\\n")
+        f.write("TabM & 84.11 & 0.8960 \\\\\n")
         
         f.write("\\hline\n")
         f.write("\\end{tabular}\n")
         f.write("\\end{table}\n")
     
-    print(f"✅ Comparison table template saved to: {comparison_path}")
+    print(f"✅ Comparison table: {comparison_path}")
     
-    # ========== Print Summary Statistics ==========
+    # ========== 6. PRINT SUMMARY ==========
     print(f"\n{'='*70}")
     print(f"SUMMARY STATISTICS")
     print(f"{'='*70}")
-    print(f"Total datasets processed: {len(summary_df)}")
+    print(f"Total datasets: {len(summary_df)}")
     print(f"")
-    print(f"📊 AVERAGE ACCURACY: {avg_accuracy:.2f}%  ← Use this for paper comparison!")
-    print(f"📊 AVERAGE AUC:      {avg_auc:.4f}")
+    print(f"📊 AVERAGE ACCURACY: {avg_accuracy:.2f}% ± {std_accuracy:.2f}%")
+    print(f"📊 AVERAGE AUC:      {avg_auc:.4f} ± {std_auc:.4f}")
     print(f"")
-    print(f"Best performing dataset:")
-    print(f"  {summary_df.iloc[0]['dataset']}: {summary_df.iloc[0]['best_accuracy']:.2f}%")
-    print(f"")
-    print(f"Worst performing dataset:")
-    print(f"  {summary_df.iloc[-1]['dataset']}: {summary_df.iloc[-1]['best_accuracy']:.2f}%")
+    print(f"🏆 Best:  {summary_df.iloc[0]['dataset']:30s} {summary_df.iloc[0]['best_accuracy']:.2f}%")
+    print(f"📉 Worst: {summary_df.iloc[-1]['dataset']:30s} {summary_df.iloc[-1]['best_accuracy']:.2f}%")
     print(f"")
     print(f"Datasets with >90% accuracy: {len(summary_df[summary_df['best_accuracy'] > 90])}")
     print(f"Datasets with >95% accuracy: {len(summary_df[summary_df['best_accuracy'] > 95])}")
     print(f"{'='*70}\n")
+    
+    # Update README with final results
+    readme_path = os.path.join(run_dir, 'README.txt')
+    with open(readme_path, 'a') as f:
+        f.write(f"\n\nFinal Results:\n")
+        f.write(f"="*50 + "\n")
+        f.write(f"Completed: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+        f.write(f"Datasets processed: {len(summary_df)}\n")
+        f.write(f"Average Accuracy: {avg_accuracy:.2f}% ± {std_accuracy:.2f}%\n")
+        f.write(f"Average AUC: {avg_auc:.4f} ± {std_auc:.4f}\n")
 
 def main():
     parser = argparse.ArgumentParser(
@@ -279,25 +343,30 @@ def main():
     )
     parser.add_argument('--datasets_dir', type=str, required=True,
                        help='Directory containing dataset folders')
-    parser.add_argument('--output_dir', type=str, required=True,
-                       help='Output directory for results')
+    parser.add_argument('--output_base', type=str, required=True,
+                       help='Base output directory (results/ folder)')
+    parser.add_argument('--job_id', type=str, required=True,
+                       help='SLURM job ID for folder naming')
     parser.add_argument('--script_path', type=str, required=True,
                        help='Path to run_vif.py')
-    parser.add_argument('--epochs', type=int, default=50,
-                       help='Number of epochs per dataset')
-    parser.add_argument('--batch_size', type=int, default=64,
-                       help='Batch size')
-    parser.add_argument('--dataset_root', type=str, required=True,
-                       help='Root directory for MNIST/FashionMNIST')
     parser.add_argument('--timeout', type=int, default=7200,
-                       help='Timeout per dataset in seconds (default: 2 hours)')
+                       help='Timeout per dataset in seconds')
     parser.add_argument('--skip_existing', action='store_true',
                        help='Skip datasets that already have results')
     
     args = parser.parse_args()
     
-    # Create output directory
-    os.makedirs(args.output_dir, exist_ok=True)
+    # Create organized output structure
+    print(f"{'='*70}")
+    print(f"SETTING UP OUTPUT STRUCTURE")
+    print(f"{'='*70}")
+    run_dir, subdirs = create_output_structure(args.output_base, args.job_id)
+    print(f"Output directory: {run_dir}")
+    print(f"  📁 models/  → {subdirs['models']}")
+    print(f"  📊 csv/     → {subdirs['csv']}")
+    print(f"  📄 latex/   → {subdirs['latex']}")
+    print(f"  📝 logs/    → {subdirs['logs']}")
+    print(f"{'='*70}\n")
     
     # Find all datasets
     print(f"{'='*70}")
@@ -316,14 +385,8 @@ def main():
     print(f"{'='*70}\n")
     
     if len(dataset_files) == 0:
-        print("❌ No datasets found! Check your datasets_dir path.")
+        print("❌ No datasets found!")
         return 1
-    
-    # Confirmation
-    print(f"Ready to process {len(dataset_files)} datasets")
-    print(f"Estimated time: ~{len(dataset_files) * args.timeout / 3600:.1f} hours (if all hit timeout)")
-    print(f"Typical time: ~{len(dataset_files) * 0.5:.1f} hours (30 min per dataset)")
-    print(f"")
     
     # Process each dataset
     results_log = []
@@ -341,13 +404,13 @@ def main():
         print(f"\n{'='*70}")
         print(f"Progress: {i}/{len(dataset_files)} datasets")
         print(f"Elapsed: {elapsed_hours:.1f}h | Remaining: ~{remaining * 0.5:.1f}h")
-        print(f"Success: {success_count} | Failed: {failed_count} | Timeout: {timeout_count}")
+        print(f"✅ {success_count} | ❌ {failed_count} | ⏱️ {timeout_count}")
         print(f"{'='*70}")
         
         # Check if already processed
         if args.skip_existing:
             dataset_name = dataset_path.parent.name
-            model_path = os.path.join(args.output_dir, 'models', f'{dataset_name}.pt')
+            model_path = os.path.join(subdirs['models'], f'{dataset_name}.pt')
             if os.path.exists(model_path):
                 print(f"⏭️  SKIPPED: {dataset_name} (model exists)")
                 skipped_count += 1
@@ -356,11 +419,8 @@ def main():
         # Run dataset
         result = run_single_dataset(
             dataset_path=dataset_path,
-            output_dir=args.output_dir,
+            subdirs=subdirs,
             script_path=args.script_path,
-            epochs=args.epochs,
-            batch_size=args.batch_size,
-            dataset_root=args.dataset_root,
             timeout=args.timeout
         )
         
@@ -374,7 +434,7 @@ def main():
             failed_count += 1
         
         # Save progress log
-        progress_log_path = os.path.join(args.output_dir, 'progress_log.jsonl')
+        progress_log_path = os.path.join(subdirs['logs'], 'progress_log.jsonl')
         with open(progress_log_path, 'a') as f:
             f.write(json.dumps(result) + '\n')
     
@@ -385,7 +445,6 @@ def main():
     print(f"BATCH PROCESSING COMPLETE")
     print(f"{'='*70}")
     print(f"Total time: {total_time/3600:.2f} hours")
-    print(f"Datasets found: {len(dataset_files)}")
     print(f"  ✅ Success: {success_count}")
     print(f"  ❌ Failed: {failed_count}")
     print(f"  ⏱️  Timeout: {timeout_count}")
@@ -395,10 +454,12 @@ def main():
     # Create summary tables
     if success_count > 0:
         print("Creating summary tables...")
-        df = parse_results_jsonl(args.output_dir)
-        create_summary_tables(df, args.output_dir)
+        df = parse_results_jsonl(subdirs)
+        create_summary_tables(df, subdirs, run_dir)
     else:
         print("⚠️  No successful results to summarize")
+    
+    print(f"\n📂 All results saved to: {run_dir}")
     
     return 0 if failed_count == 0 else 1
 
