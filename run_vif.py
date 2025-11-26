@@ -725,21 +725,25 @@ print(f"Model saved to: {saving_path}")
 print(f"{'='*70}\n")
 
 # ========== SAVE RESULTS TO JSON ==========
+# Convert numpy types to native Python types for JSON serialization
+class_dist = dict(zip(*np.unique(y, return_counts=True)))
+class_dist_json = {int(k): int(v) for k, v in class_dist.items()}
+
 results = {
     'dataset': file_name,
     'timestamp': datetime.now().isoformat(),
-    'num_samples': len(y),
-    'num_features': n_cont_features,
-    'num_classes': num_classes,
-    'class_distribution': dict(zip(*np.unique(y, return_counts=True))),
+    'num_samples': int(len(y)),
+    'num_features': int(n_cont_features),
+    'num_classes': int(num_classes),
+    'class_distribution': class_dist_json,
     'best_accuracy': float(best_accuracy),
     'best_auc': float(best_auc),
     'best_epoch': int(best_epoch),
-    'total_epochs': EPOCH,
+    'total_epochs': int(EPOCH),
     'device': str(DEVICE)
 }
 
-# Save to JSONL (one line per dataset - easy to aggregate)
+# Save to JSONL
 results_dir = os.path.dirname(args.save_dir)
 if not os.path.exists(results_dir):
     os.makedirs(results_dir)
