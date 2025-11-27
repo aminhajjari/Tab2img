@@ -744,11 +744,19 @@ results = {
 }
 
 # Save to JSONL
-results_dir = os.path.dirname(args.save_dir)
-if not os.path.exists(results_dir):
-    os.makedirs(results_dir)
+# Save to JSONL in the logs/ subdirectory
+# args.save_dir = "results/20251126_JOB*/models/dataset_name"
+# We want: "results/20251126_JOB*/logs/results.jsonl"
 
-results_file = os.path.join(results_dir, 'results.jsonl')
+model_dir = os.path.dirname(args.save_dir)  # .../models/
+run_dir = os.path.dirname(model_dir)        # .../20251126_JOB*/
+logs_dir = os.path.join(run_dir, 'logs')    # .../logs/
+
+# Create logs directory if it doesn't exist
+if not os.path.exists(logs_dir):
+    os.makedirs(logs_dir)
+
+results_file = os.path.join(logs_dir, 'results.jsonl')
 with open(results_file, 'a') as f:
     f.write(json.dumps(results) + '\n')
 
