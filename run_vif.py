@@ -36,7 +36,7 @@ EPOCH = 50
 BATCH_SIZE = 64
 
 data_path = args.data
-file_name = os.path.splitext(os.path.basename(data_path))[0]
+file_name = os.path.basename(os.path.dirname(data_path))
 saving_path = args.save_dir + '.pt'
 DATASET_ROOT = '/project/def-arashmoh/shahab33/Msc/datasets'
 
