@@ -684,11 +684,11 @@ def test(model, test_data_loader, epoch, best_accuracy, best_auc, best_epoch, be
             print(f"[WARNING] Img AUC calculation failed: {e}")
 
     # Save best model
-    if img_accuracy_total > best_accuracy:
-        best_accuracy = img_accuracy_total
-        best_epoch = epoch
-        torch.save(model.state_dict(), best_model_path)
-        print(f"[INFO] New best model saved at epoch {epoch}")
+    #if img_accuracy_total > best_accuracy:
+        #best_accuracy = img_accuracy_total
+        #best_epoch = epoch
+        #torch.save(model.state_dict(), best_model_path)
+        #print(f"[INFO] New best model saved at epoch {epoch}")
         
     if img_auc > best_auc:
         best_auc = img_auc
@@ -707,7 +707,7 @@ best_epoch = 0
 for epoch in range(1, EPOCH + 1):
     train_loss = train(cvae, train_synchronized_loader, optimizer, epoch)
     best_accuracy, best_auc, best_epoch, test_loss, tab_acc, img_acc = test(
-        cvae, test_synchronized_loader, epoch, best_accuracy, best_auc, best_epoch, saving_path
+        cvae, test_synchronized_loader, epoch, best_accuracy, best_auc, best_epoch
     )
     
     if epoch % 10 == 0 or epoch == 1:
