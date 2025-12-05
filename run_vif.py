@@ -29,11 +29,14 @@ parser.add_argument('--data', type=str, required=True,
                    help='Path to the dataset (csv/arff/data)')
 parser.add_argument('--save_dir', type=str, required=True, 
                    help='Directory to save results (no model checkpoints will be saved)')
+parser.add_argument('--num_images', type=int, default=20,
+                   help='Number of sample images to save (default: 20)')
 args = parser.parse_args()
 
 # ========== PARAMETERS ==========
 EPOCH = 50
 BATCH_SIZE = 64
+NUM_IMAGES_TO_SAVE = min(args.num_images, 20)  # Cap at 20
 
 data_path = args.data
 file_name = os.path.basename(os.path.dirname(data_path))
@@ -43,11 +46,11 @@ USE_CUDA = torch.cuda.is_available()
 DEVICE = torch.device('cuda' if USE_CUDA else 'cpu')
 
 print(f"\n{'='*70}")
-print(f"TABLE2IMAGE - Starting Experiment (No Checkpoint Saving)")
+print(f"TABLE2IMAGE - Starting Experiment")
 print(f"{'='*70}")
 print(f"Dataset: {file_name}")
 print(f"Device: {DEVICE}")
-print(f"Note: Model checkpoints will NOT be saved to disk")
+print(f"Images to save: {NUM_IMAGES_TO_SAVE}")
 print(f"{'='*70}\n")
 
 # ========== DATA LOADING FUNCTION ==========
@@ -99,7 +102,6 @@ def load_dataset(file_path):
         raise ValueError(f"Unsupported file format: {file_ext}")
 
 
-# [SAME PREPROCESSING CODE AS BEFORE - KEEPING FOR BREVITY]
 print(f"[INFO] Loading dataset: {data_path}")
 df = load_dataset(data_path)
 
@@ -447,7 +449,6 @@ def train(model, train_data_loader, optimizer, epoch):
         optimizer.step()
     return train_loss / len(train_data_loader)
 
-# ========== TESTING FUNCTION (NO CHECKPOINT SAVING) ==========
 def test(model, test_data_loader, epoch, best_accuracy, best_auc, best_epoch):
     model.eval()
     test_loss = 0
@@ -507,71 +508,100 @@ def test(model, test_data_loader, epoch, best_accuracy, best_auc, best_epoch):
         except Exception as e:
             print(f"[WARNING] Img AUC calculation failed: {e}")
 
-    # Update best metrics (NO CHECKPOINT SAVING)
     if img_accuracy_total > best_accuracy:
         best_accuracy = img_accuracy_total
         best_epoch = epoch
-        print(f"[INFO] New best accuracy: {best_accuracy:.2f}% at epoch {epoch} (not saved to disk)")
+        print(f"[INFO] New best accuracy: {best_accuracy:.2f}% at epoch {epoch}")
     if img_auc > best_auc:
         best_auc = img_auc
 
     return best_accuracy, best_auc, best_epoch, test_loss, tab_accuracy_total, img_accuracy_total
 
-# ========== TRAINING LOOP ==========
-print(f"\n{'='*70}")
-print(f"Starting Training for {EPOCH} epochs")
-print(f"{'='*70}\n")
-
-best_accuracy = 0
-best_auc = 0
-best_epoch = 0
-
-for epoch in range(1, EPOCH + 1):
-    train_loss = train(cvae, train_synchronized_loader, optimizer, epoch)
-    best_accuracy, best_auc, best_epoch, test_loss, tab_acc, img_acc = test(
-        cvae, test_synchronized_loader, epoch, best_accuracy, best_auc, best_epoch
-    )
-    if epoch % 10 == 0 or epoch == 1:
-        print(f"Epoch {epoch:3d}/{EPOCH} | Train Loss: {train_loss:.4f} | Test Loss: {test_loss:.4f} | "
-              f"Tab Acc: {tab_acc:.2f}% | Img Acc: {img_acc:.2f}%")
-
-# ========== FINAL RESULTS ==========
-print(f"\n{'='*70}")
-print(f"Training Complete!")
-print(f"{'='*70}")
-print(f"Best Image Classification Accuracy: {best_accuracy:.4f}% at epoch {best_epoch}")
-print(f"Best AUC: {best_auc:.4f}")
-print(f"Note: Model checkpoints were NOT saved to conserve disk space")
-print(f"{'='*70}\n")
-
-# ========== SAVE RESULTS TO JSON (ONLY LOGS, NO MODEL) ==========
-class_dist = dict(zip(*np.unique(y, return_counts=True)))
-class_dist_json = {int(k): int(v) for k, v in class_dist.items()}
-
-results = {
-    'dataset': file_name,
-    'timestamp': datetime.now().isoformat(),
-    'num_samples': int(len(y)),
-    'num_features': int(n_cont_features),
-    'num_classes': int(num_classes),
-    'class_distribution': class_dist_json,
-    'best_accuracy': float(best_accuracy),
-    'best_auc': float(best_auc),
-    'best_epoch': int(best_epoch),
-    'total_epochs': int(EPOCH),
-    'device': str(DEVICE)
-}
-
-# Save to logs directory
-model_dir = os.path.dirname(args.save_dir)
-run_dir = os.path.dirname(model_dir)
-logs_dir = os.path.join(run_dir, 'logs')
-if not os.path.exists(logs_dir):
-    os.makedirs(logs_dir)
-
-results_file = os.path.join(logs_dir, 'results.jsonl')
-with open(results_file, 'a') as f:
-    f.write(json.dumps(results) + '\n')
-
-print(f"[INFO] Results appended to: {results_file}")
-print(f"[INFO] No model checkpoints were saved to disk")
+# ========== NEW: IMAGE SAVING FUNCTION ==========
+def save_sample_images(model, test_data_loader, dataset_name, num_images=20):
+    """Save up to num_images reconstructed images"""
+    model.eval()
+    # Fixed output directory on Narval
+    images_base_dir = '/project/def-arashmoh/shahab33/Msc/Tab2img/imageout'
+    images_dir = os.path.join(images_base_dir, dataset_name)
+    os.makedirs(images_dir, exist_ok=True)
+    
+    saved_count = 0
+    all_originals = []
+    all_reconstructed = []
+    all_labels = []
+    
+    print(f"\n[INFO] Generating {num_images} sample images...")
+    
+    with torch.no_grad():
+        for tab_data, tab_label, img_data, img_label in test_data_loader:
+            if saved_count >= num_images:
+                break
+                
+            img_data_flat = img_data.view(-1, 28*28).to(DEVICE)
+            tab_data = tab_data.to(DEVICE)
+            
+            # Generate random input
+            random_array = np.random.rand(img_data_flat.shape[0], 28*28)
+            x_rand = torch.Tensor(random_array).to(DEVICE)
+            
+            # Generate reconstructed images
+            recon_x, _, _ = model(x_rand, tab_data)
+            
+            # Process batch
+            batch_size = min(img_data.shape[0], num_images - saved_count)
+            for i in range(batch_size):
+                all_originals.append(img_data[i].cpu().numpy())
+                all_reconstructed.append(recon_x[i].cpu().numpy().reshape(28, 28))
+                all_labels.append(tab_label[i].item())
+                saved_count += 1
+                
+                if saved_count >= num_images:
+                    break
+    
+    # Create comparison grid
+    fig, axes = plt.subplots(4, min(5, num_images), figsize=(15, 12))
+    if num_images < 5:
+        axes = axes.reshape(4, num_images)
+    
+    for idx in range(min(num_images, len(all_reconstructed))):
+        row = (idx // 5) * 2
+        col = idx % 5
+        
+        # Original image
+        axes[row, col].imshow(all_originals[idx].squeeze(), cmap='gray')
+        axes[row, col].set_title(f'Original (Label: {all_labels[idx]})', fontsize=8)
+        axes[row, col].axis('off')
+        
+        # Reconstructed image
+        axes[row + 1, col].imshow(all_reconstructed[idx], cmap='gray')
+        axes[row + 1, col].set_title(f'Generated', fontsize=8)
+        axes[row + 1, col].axis('off')
+    
+    # Hide unused subplots
+    for idx in range(len(all_reconstructed), num_images):
+        row = (idx // 5) * 2
+        col = idx % 5
+        if row < 4 and col < axes.shape[1]:
+            axes[row, col].axis('off')
+            axes[row + 1, col].axis('off')
+    
+    plt.tight_layout()
+    grid_path = os.path.join(images_dir, 'comparison_grid.png')
+    plt.savefig(grid_path, dpi=150, bbox_inches='tight')
+    plt.close()
+    print(f"[INFO] Saved comparison grid to: {grid_path}")
+    
+    # Save individual images
+    for idx, (orig, recon, label) in enumerate(zip(all_originals, all_reconstructed, all_labels)):
+        # Save original
+        orig_path = os.path.join(images_dir, f'sample_{idx:02d}_original_label{label}.png')
+        plt.imsave(orig_path, orig.squeeze(), cmap='gray')
+        
+        # Save reconstructed
+        recon_path = os.path.join(images_dir, f'sample_{idx:02d}_generated_label{label}.png')
+        plt.imsave(recon_path, recon, cmap='gray')
+    
+    print(f"[INFO] Saved {len(all_reconstructed)} individual image pairs")
+    print(f"[INFO] Images saved to: {images_dir}")
+    return len(all_reconstructed), images_dir
