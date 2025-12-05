@@ -6,6 +6,7 @@
 # All outputs organized in Tab2img folder structure
 # Author: Amin (aminhajjr@gmail.com)
 # Updated: January 2025
+# MODIFIED: Model checkpoint saving is DISABLED.
 #=======================================================================
 
 #SBATCH --account=def-arashmoh
@@ -44,7 +45,7 @@ MAIN_SCRIPT="$TAB2IMG_DIR/run_vif.py"
 VENV_PATH="$PROJECT_DIR/venvMsc/bin/activate"
 
 # Training parameters
-TIMEOUT=7200  # 2 hours per dataset
+TIMEOUT=7200    # 2 hours per dataset
 
 #=======================================================================
 # Job Information
@@ -74,8 +75,8 @@ mkdir -p "$RESULTS_BASE"
 mkdir -p "$MNIST_ROOT"
 
 echo "✅ Directories created:"
-echo "   Job logs:  $JOB_LOGS_DIR"
-echo "   Results:   $RESULTS_BASE"
+echo "    Job logs:  $JOB_LOGS_DIR"
+echo "    Results:   $RESULTS_BASE"
 
 #=======================================================================
 # Verify Paths
@@ -110,7 +111,7 @@ fi
 DATASET_COUNT=$(find "$DATASETS_DIR" -mindepth 1 -maxdepth 1 -type d | wc -l)
 echo ""
 echo "✅ All paths verified"
-echo "   Found $DATASET_COUNT dataset folders"
+echo "    Found $DATASET_COUNT dataset folders"
 
 #=======================================================================
 # Load Environment
@@ -165,12 +166,11 @@ echo "=========================================="
 # Execute Batch Processing
 #=======================================================================
 echo ""
-echo "🚀 STARTING BATCH PROCESSING"
+echo "🚀 STARTING BATCH PROCESSING (Model saving disabled)"
 echo "=========================================="
 echo "Output structure:"
 echo "  $RESULTS_BASE/"
 echo "    └── [DATE]_JOB${SLURM_JOB_ID}/"
-echo "        ├── models/   (trained .pt files)"
 echo "        ├── csv/      (result tables)"
 echo "        ├── latex/    (paper tables)"
 echo "        └── logs/     (processing logs)"
@@ -207,32 +207,32 @@ if [ $EXIT_CODE -eq 0 ]; then
     # Find the results directory
     RESULT_DIR=$(find "$RESULTS_BASE" -maxdepth 1 -type d -name "*_JOB${SLURM_JOB_ID}" | head -1)
     
-    echo "✅ SUCCESS!"
+    echo "✅ SUCCESS! Model checkpoints were NOT saved."
     echo ""
     echo "📂 Results saved to:"
-    echo "   $RESULT_DIR/"
+    echo "    $RESULT_DIR/"
     echo ""
     echo "📊 Generated files:"
-    echo "   models/                  - Trained models (*.pt)"
-    echo "   csv/results_summary.csv  - Main results table"
-    echo "   csv/statistics.csv       - Summary statistics"
-    echo "   latex/results_latex.txt  - LaTeX table (top 20)"
-    echo "   latex/comparison_table.txt - Comparison with baselines"
-    echo "   logs/progress_log.jsonl  - Execution log"
+    # REMOVED: models/                - Trained models (*.pt)
+    echo "    csv/results_summary.csv   - Main results table"
+    echo "    csv/statistics.csv        - Summary statistics"
+    echo "    latex/results_latex.txt   - LaTeX table (top 20)"
+    echo "    latex/comparison_table.txt - Comparison with baselines"
+    echo "    logs/progress_log.jsonl   - Execution log"
     echo ""
     echo "📈 To view average accuracy:"
-    echo "   cat $RESULT_DIR/csv/statistics.csv"
+    echo "    cat $RESULT_DIR/csv/statistics.csv"
     echo ""
     echo "💾 To download results to your computer:"
-    echo "   scp -r shahab33@narval.alliancecan.ca:$RESULT_DIR/ ."
+    echo "    scp -r shahab33@narval.alliancecan.ca:$RESULT_DIR/ ."
     echo ""
     echo "📧 Job completion email sent to: aminhajjr@gmail.com"
 else
     echo "❌ FAILED (exit code: $EXIT_CODE)"
     echo ""
     echo "Check logs:"
-    echo "   Output: $JOB_LOGS_DIR/batch_all_${SLURM_JOB_ID}.out"
-    echo "   Error:  $JOB_LOGS_DIR/batch_all_${SLURM_JOB_ID}.err"
+    echo "    Output: $JOB_LOGS_DIR/batch_all_${SLURM_JOB_ID}.out"
+    echo "    Error:  $JOB_LOGS_DIR/batch_all_${SLURM_JOB_ID}.err"
     echo ""
     echo "Partial results may be in: $RESULTS_BASE/"
 fi
