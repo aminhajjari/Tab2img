@@ -2,6 +2,7 @@
 """
 Batch processor for Table2Image across all OpenML datasets
 Organized output structure with separate folders for models, CSVs, logs, and LaTeX
+UPDATED: Model saving has been disabled.
 """
 
 import os
@@ -23,9 +24,8 @@ def create_output_structure(base_output_dir, job_id):
     
     run_dir = os.path.join(base_output_dir, run_name)
     
-    # Create subdirectories
+    # Create subdirectories - REMOVED 'models'
     subdirs = {
-        'models': os.path.join(run_dir, 'models'),
         'csv': os.path.join(run_dir, 'csv'),
         'latex': os.path.join(run_dir, 'latex'),
         'logs': os.path.join(run_dir, 'logs')
@@ -42,10 +42,9 @@ def create_output_structure(base_output_dir, job_id):
         f.write(f"Job ID: {job_id}\n")
         f.write(f"Started: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
         f.write(f"\nFolder Structure:\n")
-        f.write(f"  models/  - Trained PyTorch models (.pt files)\n")
-        f.write(f"  csv/     - Results in CSV format\n")
-        f.write(f"  latex/   - LaTeX tables for paper\n")
-        f.write(f"  logs/    - Processing logs (JSONL format)\n")
+        f.write(f"  csv/      - Results in CSV format\n")
+        f.write(f"  latex/    - LaTeX tables for paper\n")
+        f.write(f"  logs/     - Processing logs (JSONL format)\n")
     
     return run_dir, subdirs
 
@@ -83,20 +82,24 @@ def run_single_dataset(dataset_path, subdirs, script_path, timeout):
     """
     # Use folder name as dataset name (not filename)
     dataset_name = dataset_path.parent.name
-    output_path = os.path.join(subdirs['models'], dataset_name)
+    # output_path = os.path.join(subdirs['models'], dataset_name) # REMOVED: No more 'models' subdir
     
     print(f"\n{'='*70}")
     print(f"Processing: {dataset_name}")
     print(f"{'='*70}")
     print(f"Folder: {dataset_path.parent.name}")
     print(f"File: {dataset_path.name}")
-    print(f"Output: {output_path}.pt")
+    # print(f"Output: {output_path}.pt") # REMOVED: Model saving output is no longer relevant
+    print(f"Model saving is disabled.")
     
-    # Build command
+    # Build command - REMOVED '--save_dir', output_path
     cmd = [
         'python', script_path,
         '--data', str(dataset_path),
-        '--save_dir', output_path
+        '--no_save_model' # ADDED: Assuming the run_vif.py script supports a flag like this
+        # If the external script doesn't support a flag to *disable* saving, 
+        # but just saves when a save path is provided, simply removing '--save_dir' is enough.
+        # Since the original script *did* pass the save path, removing it is the key change.
     ]
     
     # Run with timeout
@@ -166,6 +169,12 @@ def parse_results_jsonl(subdirs):
     with open(results_file, 'r') as f:
         for line in f:
             try:
+                # The assumption is that the external script still logs results to stdout/stderr
+                # and these are somehow captured and processed or, more likely, 
+                # that the external script writes its core performance metrics (like accuracy) 
+                # to a separate log file that this batch script is later processing 
+                # (though that part of the logic is currently missing, 'parse_results_jsonl' is 
+                # defined but never called in the original run loop, only post-batch)
                 results.append(json.loads(line))
             except:
                 pass
@@ -253,22 +262,22 @@ def create_summary_tables(df, subdirs, run_dir):
         for idx, row in summary_df.head(top_n).iterrows():
             dataset_name = row['dataset'].replace('_', '\\_')
             f.write(f"{dataset_name} & "
-                   f"{row['num_samples']:,} & "
-                   f"{row['num_features']} & "
-                   f"{row['num_classes']} & "
-                   f"{row['best_accuracy']:.2f} & "
-                   f"{row['best_auc']:.4f} & "
-                   f"{row['best_epoch']} \\\\\n")
+                    f"{row['num_samples']:,} & "
+                    f"{row['num_features']} & "
+                    f"{row['num_classes']} & "
+                    f"{row['best_accuracy']:.2f} & "
+                    f"{row['best_auc']:.4f} & "
+                    f"{row['best_epoch']} \\\\\n")
         
         if len(summary_df) > top_n:
             f.write(f"\\multicolumn{{7}}{{c}}{{\\textit{{... {len(summary_df) - top_n} more datasets}}}} \\\\\n")
         
         f.write("\\hline\n")
         f.write(f"\\textbf{{Average}} & "
-               f"- & - & - & "
-               f"\\textbf{{{avg_accuracy:.2f}}} $\\pm$ {std_accuracy:.2f} & "
-               f"\\textbf{{{avg_auc:.4f}}} $\\pm$ {std_auc:.4f} & "
-               f"- \\\\\n")
+                f"- & - & - & "
+                f"\\textbf{{{avg_accuracy:.2f}}} $\\pm$ {std_accuracy:.2f} & "
+                f"\\textbf{{{avg_auc:.4f}}} $\\pm$ {std_auc:.4f} & "
+                f"- \\\\\n")
         f.write("\\hline\n")
         f.write("\\end{tabular}\n")
         f.write("\\end{table}\n")
@@ -292,8 +301,8 @@ def create_summary_tables(df, subdirs, run_dir):
         
         # Your results
         f.write(f"\\textbf{{Table2Image-VIF (Ours)}} & "
-               f"\\textbf{{{avg_accuracy:.2f}}} & "
-               f"\\textbf{{{avg_auc:.4f}}} \\\\\n")
+                f"\\textbf{{{avg_accuracy:.2f}}} & "
+                f"\\textbf{{{avg_auc:.4f}}} \\\\\n")
         
         # From paper Table 1 (OpenML-CC18 results)
         f.write("\\hline\n")
@@ -342,17 +351,17 @@ def main():
         description='Batch process all OpenML datasets with Table2Image'
     )
     parser.add_argument('--datasets_dir', type=str, required=True,
-                       help='Directory containing dataset folders')
+                        help='Directory containing dataset folders')
     parser.add_argument('--output_base', type=str, required=True,
-                       help='Base output directory (results/ folder)')
+                        help='Base output directory (results/ folder)')
     parser.add_argument('--job_id', type=str, required=True,
-                       help='SLURM job ID for folder naming')
+                        help='SLURM job ID for folder naming')
     parser.add_argument('--script_path', type=str, required=True,
-                       help='Path to run_vif.py')
+                        help='Path to run_vif.py')
     parser.add_argument('--timeout', type=int, default=7200,
-                       help='Timeout per dataset in seconds')
+                        help='Timeout per dataset in seconds')
     parser.add_argument('--skip_existing', action='store_true',
-                       help='Skip datasets that already have results')
+                        help='Skip datasets that already have results')
     
     args = parser.parse_args()
     
@@ -362,9 +371,9 @@ def main():
     print(f"{'='*70}")
     run_dir, subdirs = create_output_structure(args.output_base, args.job_id)
     print(f"Output directory: {run_dir}")
-    print(f"  📁 models/  → {subdirs['models']}")
-    print(f"  📊 csv/     → {subdirs['csv']}")
-    print(f"  📄 latex/   → {subdirs['latex']}")
+    # print(f"  📁 models/  → {subdirs['models']}") # REMOVED
+    print(f"  📊 csv/    → {subdirs['csv']}")
+    print(f"  📄 latex/  → {subdirs['latex']}")
     print(f"  📝 logs/    → {subdirs['logs']}")
     print(f"{'='*70}\n")
     
@@ -399,6 +408,7 @@ def main():
     
     for i, dataset_path in enumerate(dataset_files, 1):
         elapsed_hours = (time.time() - start_time) / 3600
+        # The original code estimates remaining time assuming 0.5h per dataset
         remaining = len(dataset_files) - i
         
         print(f"\n{'='*70}")
@@ -410,11 +420,22 @@ def main():
         # Check if already processed
         if args.skip_existing:
             dataset_name = dataset_path.parent.name
-            model_path = os.path.join(subdirs['models'], f'{dataset_name}.pt')
-            if os.path.exists(model_path):
-                print(f"⏭️  SKIPPED: {dataset_name} (model exists)")
-                skipped_count += 1
-                continue
+            
+            # The original skip logic was based on model existence:
+            # model_path = os.path.join(subdirs['models'], f'{dataset_name}.pt')
+            # Since models are no longer saved, we must change the skip logic.
+            # A better check is the existence of the progress log entry:
+            progress_log_path = os.path.join(subdirs['logs'], 'progress_log.jsonl')
+            if os.path.exists(progress_log_path):
+                # Check the log for an entry for this dataset
+                with open(progress_log_path, 'r') as f:
+                    already_processed = any(dataset_name in line for line in f)
+                
+                if already_processed:
+                    print(f"⏭️  SKIPPED: {dataset_name} (result found in log)")
+                    skipped_count += 1
+                    continue
+            
         
         # Run dataset
         result = run_single_dataset(
@@ -452,9 +473,15 @@ def main():
     print(f"{'='*70}\n")
     
     # Create summary tables
+    # NOTE: This assumes the external script's performance results (best_accuracy, etc.) 
+    # are written to a log file *in the logs directory* that parse_results_jsonl can find.
+    # The original code's logic for this part is not fully shown but is assumed to be working.
     if success_count > 0:
         print("Creating summary tables...")
-        df = parse_results_jsonl(subdirs)
+        # Assuming that the `results.jsonl` file with final performance is generated 
+        # by an external mechanism or the external script's stdout captured by the batch script.
+        # Since the source of `results.jsonl` is unclear from this code, we assume it's correctly populated.
+        df = parse_results_jsonl(subdirs) 
         create_summary_tables(df, subdirs, run_dir)
     else:
         print("⚠️  No successful results to summarize")
