@@ -1,12 +1,12 @@
 #!/bin/bash
 
 #=======================================================================
-# SLURM BATCH SCRIPT - Process ALL OpenML Datasets
+# SLURM BATCH SCRIPT - Process ALL OpenML Datasets (83 datasets)
 #=======================================================================
 # All outputs organized in Tab2img folder structure
 # Author: Amin (aminhajjr@gmail.com)
 # Updated: January 2025
-# MODIFIED: Model checkpoint saving is DISABLED.
+# MODIFIED: Optimized for 83 datasets, no model saving
 #=======================================================================
 
 #SBATCH --account=def-arashmoh
@@ -15,7 +15,7 @@
 #SBATCH --gpus-per-node=a100:1
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=32G
-#SBATCH --time=48:00:00
+#SBATCH --time=72:00:00
 
 #SBATCH --output=/project/def-arashmoh/shahab33/Msc/Tab2img/job_logs/batch_all_%A.out
 #SBATCH --error=/project/def-arashmoh/shahab33/Msc/Tab2img/job_logs/batch_all_%A.err
@@ -44,8 +44,8 @@ MAIN_SCRIPT="$TAB2IMG_DIR/run_vif.py"
 # Virtual environment
 VENV_PATH="$PROJECT_DIR/venvMsc/bin/activate"
 
-# Training parameters
-TIMEOUT=7200    # 2 hours per dataset
+# Training parameters (optimized for 83 datasets)
+TIMEOUT=5400    # 1.5 hours per dataset (reduced from 2h)
 
 #=======================================================================
 # Job Information
@@ -56,6 +56,7 @@ echo "=========================================="
 echo "Job ID: $SLURM_JOB_ID"
 echo "Started: $(date)"
 echo "Node: $(hostname)"
+echo "Datasets: 83 (updated from 67)"
 echo "=========================================="
 
 #=======================================================================
@@ -113,6 +114,10 @@ echo ""
 echo "✅ All paths verified"
 echo "    Found $DATASET_COUNT dataset folders"
 
+if [ $DATASET_COUNT -ne 83 ]; then
+    echo "⚠️  WARNING: Expected 83 datasets, found $DATASET_COUNT"
+fi
+
 #=======================================================================
 # Load Environment
 #=======================================================================
@@ -163,6 +168,18 @@ fi
 echo "=========================================="
 
 #=======================================================================
+# Time Estimation
+#=======================================================================
+ESTIMATED_HOURS=$(echo "scale=1; $DATASET_COUNT * 1.5 / 60" | bc)
+echo ""
+echo "⏱️  Time Estimation:"
+echo "   Datasets: $DATASET_COUNT"
+echo "   Timeout per dataset: $(($TIMEOUT / 3600))h $(($TIMEOUT % 3600 / 60))m"
+echo "   Estimated total: ~${ESTIMATED_HOURS}h (without overhead)"
+echo "   Job limit: 72h"
+echo ""
+
+#=======================================================================
 # Execute Batch Processing
 #=======================================================================
 echo ""
@@ -177,7 +194,8 @@ echo "        └── logs/     (processing logs)"
 echo ""
 echo "Configuration:"
 echo "  Datasets: $DATASET_COUNT"
-echo "  Timeout: $((TIMEOUT / 3600))h per dataset"
+echo "  Timeout: $(($TIMEOUT / 3600))h $(($TIMEOUT % 3600 / 60))m per dataset"
+echo "  Total time limit: 72 hours"
 echo "=========================================="
 echo ""
 
@@ -207,18 +225,21 @@ if [ $EXIT_CODE -eq 0 ]; then
     # Find the results directory
     RESULT_DIR=$(find "$RESULTS_BASE" -maxdepth 1 -type d -name "*_JOB${SLURM_JOB_ID}" | head -1)
     
-    echo "✅ SUCCESS! Model checkpoints were NOT saved."
+    echo "✅ SUCCESS! All 83 datasets processed."
     echo ""
     echo "📂 Results saved to:"
     echo "    $RESULT_DIR/"
     echo ""
     echo "📊 Generated files:"
-    # REMOVED: models/                - Trained models (*.pt)
     echo "    csv/results_summary.csv   - Main results table"
     echo "    csv/statistics.csv        - Summary statistics"
     echo "    latex/results_latex.txt   - LaTeX table (top 20)"
     echo "    latex/comparison_table.txt - Comparison with baselines"
     echo "    logs/progress_log.jsonl   - Execution log"
+    echo "    logs/results.jsonl        - Results per dataset"
+    echo ""
+    echo "🖼️  Images saved to:"
+    echo "    /project/def-arashmoh/shahab33/Msc/Tab2img/imageout/"
     echo ""
     echo "📈 To view average accuracy:"
     echo "    cat $RESULT_DIR/csv/statistics.csv"
