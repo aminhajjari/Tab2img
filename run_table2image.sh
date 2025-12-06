@@ -1,12 +1,12 @@
 #!/bin/bash
 
 #=======================================================================
-# SLURM BATCH SCRIPT - Process ALL OpenML Datasets (83 datasets)
+# SLURM BATCH SCRIPT - Process ALL OpenML Datasets (82 datasets)
 #=======================================================================
 # All outputs organized in Tab2img folder structure
 # Author: Amin (aminhajjr@gmail.com)
 # Updated: January 2025
-# MODIFIED: Optimized for 83 datasets, no model saving
+# MODIFIED: Optimized for 82 datasets, no model saving
 #=======================================================================
 
 #SBATCH --account=def-arashmoh
@@ -56,7 +56,7 @@ echo "=========================================="
 echo "Job ID: $SLURM_JOB_ID"
 echo "Started: $(date)"
 echo "Node: $(hostname)"
-echo "Datasets: 83 (updated from 67)"
+echo "Datasets: 82 (updated from 67)"
 echo "=========================================="
 
 #=======================================================================
@@ -114,8 +114,8 @@ echo ""
 echo "✅ All paths verified"
 echo "    Found $DATASET_COUNT dataset folders"
 
-if [ $DATASET_COUNT -ne 83 ]; then
-    echo "⚠️  WARNING: Expected 83 datasets, found $DATASET_COUNT"
+if [ $DATASET_COUNT -ne 82 ]; then
+    echo "⚠️  WARNING: Expected 82 datasets, found $DATASET_COUNT"
 fi
 
 #=======================================================================
@@ -225,7 +225,7 @@ if [ $EXIT_CODE -eq 0 ]; then
     # Find the results directory
     RESULT_DIR=$(find "$RESULTS_BASE" -maxdepth 1 -type d -name "*_JOB${SLURM_JOB_ID}" | head -1)
     
-    echo "✅ SUCCESS! All 83 datasets processed."
+    echo "✅ SUCCESS! All 82 datasets processed."
     echo ""
     echo "📂 Results saved to:"
     echo "    $RESULT_DIR/"
