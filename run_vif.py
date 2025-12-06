@@ -27,8 +27,8 @@ import scipy.io.arff as arff
 parser = argparse.ArgumentParser(description="Welcome to Table2Image")
 parser.add_argument('--data', type=str, required=True, 
                    help='Path to the dataset (csv/arff/data)')
-parser.add_argument('--save_dir', type=str, required=True, 
-                   help='Directory to save results (no model checkpoints will be saved)')
+parser.add_argument('--save_dir', type=str, required=False, default=None,
+                   help='Directory to save results (optional, for compatibility)')
 parser.add_argument('--num_images', type=int, default=20,
                    help='Number of sample images to save (default: 20)')
 args = parser.parse_args()
@@ -517,11 +517,10 @@ def test(model, test_data_loader, epoch, best_accuracy, best_auc, best_epoch):
 
     return best_accuracy, best_auc, best_epoch, test_loss, tab_accuracy_total, img_accuracy_total
 
-# ========== NEW: IMAGE SAVING FUNCTION ==========
+# ========== IMAGE SAVING FUNCTION ==========
 def save_sample_images(model, test_data_loader, dataset_name, num_images=20):
     """Save up to num_images reconstructed images"""
     model.eval()
-    # Fixed output directory on Narval
     images_base_dir = '/project/def-arashmoh/shahab33/Msc/Tab2img/imageout'
     images_dir = os.path.join(images_base_dir, dataset_name)
     os.makedirs(images_dir, exist_ok=True)
@@ -541,14 +540,11 @@ def save_sample_images(model, test_data_loader, dataset_name, num_images=20):
             img_data_flat = img_data.view(-1, 28*28).to(DEVICE)
             tab_data = tab_data.to(DEVICE)
             
-            # Generate random input
             random_array = np.random.rand(img_data_flat.shape[0], 28*28)
             x_rand = torch.Tensor(random_array).to(DEVICE)
             
-            # Generate reconstructed images
             recon_x, _, _ = model(x_rand, tab_data)
             
-            # Process batch
             batch_size = min(img_data.shape[0], num_images - saved_count)
             for i in range(batch_size):
                 all_originals.append(img_data[i].cpu().numpy())
@@ -559,7 +555,6 @@ def save_sample_images(model, test_data_loader, dataset_name, num_images=20):
                 if saved_count >= num_images:
                     break
     
-    # Create comparison grid
     fig, axes = plt.subplots(4, min(5, num_images), figsize=(15, 12))
     if num_images < 5:
         axes = axes.reshape(4, num_images)
@@ -568,17 +563,14 @@ def save_sample_images(model, test_data_loader, dataset_name, num_images=20):
         row = (idx // 5) * 2
         col = idx % 5
         
-        # Original image
         axes[row, col].imshow(all_originals[idx].squeeze(), cmap='gray')
         axes[row, col].set_title(f'Original (Label: {all_labels[idx]})', fontsize=8)
         axes[row, col].axis('off')
         
-        # Reconstructed image
         axes[row + 1, col].imshow(all_reconstructed[idx], cmap='gray')
         axes[row + 1, col].set_title(f'Generated', fontsize=8)
         axes[row + 1, col].axis('off')
     
-    # Hide unused subplots
     for idx in range(len(all_reconstructed), num_images):
         row = (idx // 5) * 2
         col = idx % 5
@@ -592,16 +584,71 @@ def save_sample_images(model, test_data_loader, dataset_name, num_images=20):
     plt.close()
     print(f"[INFO] Saved comparison grid to: {grid_path}")
     
-    # Save individual images
     for idx, (orig, recon, label) in enumerate(zip(all_originals, all_reconstructed, all_labels)):
-        # Save original
         orig_path = os.path.join(images_dir, f'sample_{idx:02d}_original_label{label}.png')
         plt.imsave(orig_path, orig.squeeze(), cmap='gray')
         
-        # Save reconstructed
         recon_path = os.path.join(images_dir, f'sample_{idx:02d}_generated_label{label}.png')
         plt.imsave(recon_path, recon, cmap='gray')
     
     print(f"[INFO] Saved {len(all_reconstructed)} individual image pairs")
     print(f"[INFO] Images saved to: {images_dir}")
     return len(all_reconstructed), images_dir
+
+# ========== TRAINING LOOP (NO MODEL SAVING) ==========
+print("\n" + "="*70)
+print("STARTING TRAINING")
+print("="*70)
+
+best_accuracy = 0
+best_auc = 0
+best_epoch = 0
+
+for epoch in range(1, EPOCH + 1):
+    train_loss = train(cvae, train_synchronized_loader, optimizer, epoch)
+    best_accuracy, best_auc, best_epoch, test_loss, tab_acc, img_acc = test(
+        cvae, test_synchronized_loader, epoch, best_accuracy, best_auc, best_epoch
+    )
+    
+    if epoch % 10 == 0 or epoch == 1:
+        print(f"[Epoch {epoch:3d}] Train Loss: {train_loss:.4f} | "
+              f"Test Loss: {test_loss:.4f} | "
+              f"Tab Acc: {tab_acc:.2f}% | Img Acc: {img_acc:.2f}%")
+
+print("\n" + "="*70)
+print("TRAINING COMPLETE")
+print(f"Best Accuracy: {best_accuracy:.2f}% at epoch {best_epoch}")
+print(f"Best AUC: {best_auc:.4f}")
+print("="*70 + "\n")
+
+# Save sample images
+num_saved, save_dir = save_sample_images(
+    cvae, test_synchronized_loader, file_name, NUM_IMAGES_TO_SAVE
+)
+
+# Output results as JSON to stdout (for batch script to capture)
+results = {
+    'dataset': file_name,
+    'num_samples': len(X),
+    'num_features': n_cont_features,
+    'num_classes': num_classes,
+    'best_accuracy': best_accuracy,
+    'best_auc': best_auc,
+    'best_epoch': best_epoch,
+    'images_saved': num_saved,
+    'images_dir': save_dir,
+    'timestamp': datetime.now().isoformat()
+}
+
+# Print JSON result (batch script will capture this)
+print("\n" + "="*70)
+print("RESULTS_JSON_START")
+print(json.dumps(results))
+print("RESULTS_JSON_END")
+print("="*70 + "\n")
+
+print(f"✅ Experiment completed successfully!")
+print(f"   Dataset: {file_name}")
+print(f"   Accuracy: {best_accuracy:.2f}%")
+print(f"   AUC: {best_auc:.4f}")
+print(f"   Images: {save_dir}")
