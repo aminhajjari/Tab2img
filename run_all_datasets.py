@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
 Batch processor for Table2Image across all OpenML datasets
-Organized output structure with separate folders for models, CSVs, logs, and LaTeX
-UPDATED: Model saving has been disabled.
+Organized output structure with separate folders for CSVs, logs, and LaTeX
+Model saving is DISABLED - only results and images are saved
 """
 
 import os
@@ -24,7 +24,7 @@ def create_output_structure(base_output_dir, job_id):
     
     run_dir = os.path.join(base_output_dir, run_name)
     
-    # Create subdirectories - REMOVED 'models'
+    # Create subdirectories (no 'models' folder)
     subdirs = {
         'csv': os.path.join(run_dir, 'csv'),
         'latex': os.path.join(run_dir, 'latex'),
@@ -45,6 +45,8 @@ def create_output_structure(base_output_dir, job_id):
         f.write(f"  csv/      - Results in CSV format\n")
         f.write(f"  latex/    - LaTeX tables for paper\n")
         f.write(f"  logs/     - Processing logs (JSONL format)\n")
+        f.write(f"\nNOTE: Model checkpoints are NOT saved.\n")
+        f.write(f"      Images are saved to: /project/def-arashmoh/shahab33/Msc/Tab2img/imageout/\n")
     
     return run_dir, subdirs
 
@@ -80,26 +82,19 @@ def run_single_dataset(dataset_path, subdirs, script_path, timeout):
     """
     Run Table2Image on a single dataset
     """
-    # Use folder name as dataset name (not filename)
     dataset_name = dataset_path.parent.name
-    # output_path = os.path.join(subdirs['models'], dataset_name) # REMOVED: No more 'models' subdir
     
     print(f"\n{'='*70}")
     print(f"Processing: {dataset_name}")
     print(f"{'='*70}")
     print(f"Folder: {dataset_path.parent.name}")
     print(f"File: {dataset_path.name}")
-    # print(f"Output: {output_path}.pt") # REMOVED: Model saving output is no longer relevant
-    print(f"Model saving is disabled.")
+    print(f"Model saving is DISABLED - only results and images will be saved")
     
-    # Build command - REMOVED '--save_dir', output_path
+    # Build command (no --save_dir needed)
     cmd = [
         'python', script_path,
-        '--data', str(dataset_path),
-        '--no_save_model' # ADDED: Assuming the run_vif.py script supports a flag like this
-        # If the external script doesn't support a flag to *disable* saving, 
-        # but just saves when a save path is provided, simply removing '--save_dir' is enough.
-        # Since the original script *did* pass the save path, removing it is the key change.
+        '--data', str(dataset_path)
     ]
     
     # Run with timeout
@@ -116,10 +111,27 @@ def run_single_dataset(dataset_path, subdirs, script_path, timeout):
         
         if result.returncode == 0:
             print(f"✅ SUCCESS in {elapsed:.1f}s")
+            
+            # Extract JSON results from stdout
+            results_data = None
+            try:
+                stdout = result.stdout
+                if "RESULTS_JSON_START" in stdout and "RESULTS_JSON_END" in stdout:
+                    json_start = stdout.find("RESULTS_JSON_START") + len("RESULTS_JSON_START")
+                    json_end = stdout.find("RESULTS_JSON_END")
+                    json_str = stdout[json_start:json_end].strip()
+                    results_data = json.loads(json_str)
+                    print(f"📊 Accuracy: {results_data.get('best_accuracy', 0):.2f}%")
+                    print(f"📊 AUC: {results_data.get('best_auc', 0):.4f}")
+                    print(f"🖼️  Images: {results_data.get('images_dir', 'N/A')}")
+            except Exception as e:
+                print(f"⚠️  Could not parse results: {e}")
+            
             return {
                 'status': 'success',
                 'dataset': dataset_name,
                 'elapsed_time': elapsed,
+                'results': results_data,
                 'stdout': result.stdout,
                 'stderr': result.stderr
             }
@@ -169,12 +181,6 @@ def parse_results_jsonl(subdirs):
     with open(results_file, 'r') as f:
         for line in f:
             try:
-                # The assumption is that the external script still logs results to stdout/stderr
-                # and these are somehow captured and processed or, more likely, 
-                # that the external script writes its core performance metrics (like accuracy) 
-                # to a separate log file that this batch script is later processing 
-                # (though that part of the logic is currently missing, 'parse_results_jsonl' is 
-                # defined but never called in the original run loop, only post-batch)
                 results.append(json.loads(line))
             except:
                 pass
@@ -371,7 +377,6 @@ def main():
     print(f"{'='*70}")
     run_dir, subdirs = create_output_structure(args.output_base, args.job_id)
     print(f"Output directory: {run_dir}")
-    # print(f"  📁 models/  → {subdirs['models']}") # REMOVED
     print(f"  📊 csv/    → {subdirs['csv']}")
     print(f"  📄 latex/  → {subdirs['latex']}")
     print(f"  📝 logs/    → {subdirs['logs']}")
@@ -408,7 +413,6 @@ def main():
     
     for i, dataset_path in enumerate(dataset_files, 1):
         elapsed_hours = (time.time() - start_time) / 3600
-        # The original code estimates remaining time assuming 0.5h per dataset
         remaining = len(dataset_files) - i
         
         print(f"\n{'='*70}")
@@ -420,14 +424,8 @@ def main():
         # Check if already processed
         if args.skip_existing:
             dataset_name = dataset_path.parent.name
-            
-            # The original skip logic was based on model existence:
-            # model_path = os.path.join(subdirs['models'], f'{dataset_name}.pt')
-            # Since models are no longer saved, we must change the skip logic.
-            # A better check is the existence of the progress log entry:
             progress_log_path = os.path.join(subdirs['logs'], 'progress_log.jsonl')
             if os.path.exists(progress_log_path):
-                # Check the log for an entry for this dataset
                 with open(progress_log_path, 'r') as f:
                     already_processed = any(dataset_name in line for line in f)
                 
@@ -435,7 +433,6 @@ def main():
                     print(f"⏭️  SKIPPED: {dataset_name} (result found in log)")
                     skipped_count += 1
                     continue
-            
         
         # Run dataset
         result = run_single_dataset(
@@ -458,6 +455,12 @@ def main():
         progress_log_path = os.path.join(subdirs['logs'], 'progress_log.jsonl')
         with open(progress_log_path, 'a') as f:
             f.write(json.dumps(result) + '\n')
+        
+        # Also save results to results.jsonl if available
+        if result['status'] == 'success' and result.get('results'):
+            results_jsonl_path = os.path.join(subdirs['logs'], 'results.jsonl')
+            with open(results_jsonl_path, 'a') as f:
+                f.write(json.dumps(result['results']) + '\n')
     
     # Final summary
     total_time = time.time() - start_time
@@ -473,15 +476,9 @@ def main():
     print(f"{'='*70}\n")
     
     # Create summary tables
-    # NOTE: This assumes the external script's performance results (best_accuracy, etc.) 
-    # are written to a log file *in the logs directory* that parse_results_jsonl can find.
-    # The original code's logic for this part is not fully shown but is assumed to be working.
     if success_count > 0:
         print("Creating summary tables...")
-        # Assuming that the `results.jsonl` file with final performance is generated 
-        # by an external mechanism or the external script's stdout captured by the batch script.
-        # Since the source of `results.jsonl` is unclear from this code, we assume it's correctly populated.
-        df = parse_results_jsonl(subdirs) 
+        df = parse_results_jsonl(subdirs)
         create_summary_tables(df, subdirs, run_dir)
     else:
         print("⚠️  No successful results to summarize")
