@@ -74,7 +74,7 @@ def load_dataset(file_path):
                     except AttributeError:
                         pass
             print(f"[INFO] ARFF attributes: {list(meta.names())[:10]}...")
-            return df
+            return df, meta  # Return metadata too
         except Exception as e:
             print(f"[WARNING] scipy.io.arff failed: {e}")
             try:
@@ -83,7 +83,7 @@ def load_dataset(file_path):
                     dataset = arff_lib.load(f)
                 df = pd.DataFrame(dataset['data'], 
                                 columns=[attr[0] for attr in dataset['attributes']])
-                return df
+                return df, None  # No metadata from backup parser
             except Exception as e2:
                 raise Exception(f"All ARFF parsers failed. Errors: (1) {e}, (2) {e2}")
     
@@ -94,7 +94,7 @@ def load_dataset(file_path):
                 df = pd.read_csv(file_path, sep=sep, header=None)
                 if df.shape[1] > 1:
                     print(f"[INFO] Detected delimiter: '{sep}'")
-                    return df
+                    return df, None
             except:
                 continue
         raise Exception("Could not determine delimiter for .data file")
@@ -103,7 +103,14 @@ def load_dataset(file_path):
 
 
 print(f"[INFO] Loading dataset: {data_path}")
-df = load_dataset(data_path)
+
+# Load dataset (with metadata if ARFF)
+file_ext = os.path.splitext(data_path)[1].lower()
+if file_ext == '.arff':
+    df, arff_meta = load_dataset(data_path)
+else:
+    df = load_dataset(data_path)
+    arff_meta = None
 
 if df.empty:
     raise ValueError("Dataset is empty after loading")
@@ -113,27 +120,95 @@ if df.shape[1] < 2:
 print(f"[INFO] Initial dataset shape: {df.shape}")
 print(f"[INFO] Columns: {df.columns.tolist()[:10]}...")
 
+# Handle missing values
 missing_markers = ['?', '', ' ', 'nan', 'NaN', 'NA', 'null', 'None', '-']
 df = df.replace(missing_markers, np.nan)
 initial_missing = df.isnull().sum().sum()
 print(f"[INFO] Initial missing values: {initial_missing}")
 
-target_col_candidates = [
-    'target', 'class', 'outcome', 'Class', 'binaryClass', 'status', 'Target',
-    'TR', 'speaker', 'Home/Away', 'Outcome', 'Leaving_Certificate', 'technology',
-    'signal', 'label', 'Label', 'click', 'percent_pell_grant', 'Survival',
-    'diagnosis', 'y'
-]
+# ========== IMPROVED TARGET COLUMN DETECTION ==========
+target_col = None
 
-target_col = next((col for col in df.columns if col in target_col_candidates), None)
+# Strategy 1: For ARFF files, use metadata to identify target
+if arff_meta is not None:
+    print("[INFO] Detecting target column from ARFF metadata...")
+    try:
+        attr_names = list(arff_meta.names())
+        # ARFF convention: last attribute is typically the class/target
+        target_col = attr_names[-1]
+        print(f"[INFO] ARFF metadata indicates target: '{target_col}'")
+        
+        # Verify this column exists in dataframe
+        if target_col not in df.columns:
+            print(f"[WARNING] Metadata target '{target_col}' not found in dataframe. Falling back...")
+            target_col = None
+    except Exception as e:
+        print(f"[WARNING] Could not read ARFF metadata: {e}")
+        target_col = None
+
+# Strategy 2: Search for known target column names
 if target_col is None:
+    target_col_candidates = [
+        'target', 'class', 'outcome', 'Class', 'binaryClass', 'status', 'Target',
+        'TR', 'speaker', 'Home/Away', 'Outcome', 'Leaving_Certificate', 'technology',
+        'signal', 'label', 'Label', 'click', 'percent_pell_grant', 'Survival',
+        'diagnosis', 'y'
+    ]
+    target_col = next((col for col in df.columns if col in target_col_candidates), None)
+    if target_col:
+        print(f"[INFO] Found target column by name: '{target_col}'")
+
+# Strategy 3: Use last column as fallback
+if target_col is None:
+    target_col = df.columns[-1]
     if all(isinstance(col, int) for col in df.columns):
-        target_col = df.columns[-1]
         print(f"[INFO] Using last column (index {target_col}) as target.")
     else:
-        target_col = df.columns[-1]
-        print(f"[INFO] Using '{target_col}' as target.")
+        print(f"[INFO] Using last column '{target_col}' as target.")
+
 print(f"[INFO] Target column: {target_col}")
+
+# ========== EARLY CLASS DISTRIBUTION CHECK ==========
+print(f"\n[INFO] Checking class distribution before preprocessing...")
+if target_col in df.columns:
+    # Show raw distribution
+    target_value_counts = df[target_col].value_counts()
+    print(f"[INFO] Raw class distribution:")
+    for val, count in target_value_counts.items():
+        print(f"  Class '{val}': {count} samples")
+    
+    # Check for classes with too few samples
+    min_samples_per_class = 10
+    rare_classes = target_value_counts[target_value_counts < min_samples_per_class]
+    
+    if len(rare_classes) > 0:
+        print(f"\n[WARNING] Found {len(rare_classes)} class(es) with <{min_samples_per_class} samples:")
+        for cls, count in rare_classes.items():
+            print(f"  Class '{cls}': {count} samples")
+        
+        # Filter out rare classes
+        valid_classes = target_value_counts[target_value_counts >= min_samples_per_class].index.tolist()
+        
+        if len(valid_classes) < 2:
+            print(f"[ERROR] Only {len(valid_classes)} valid class(es) remain after filtering. Need at least 2.")
+            print(f"[ERROR] Skipping dataset: insufficient samples per class.")
+            exit(0)
+        
+        print(f"[INFO] Filtering dataset to keep only classes with >={min_samples_per_class} samples...")
+        original_size = len(df)
+        df = df[df[target_col].isin(valid_classes)]
+        filtered_size = len(df)
+        print(f"[INFO] Removed {original_size - filtered_size} samples from rare classes")
+        print(f"[INFO] New dataset shape: {df.shape}")
+        
+        # Show new distribution
+        new_distribution = df[target_col].value_counts()
+        print(f"[INFO] Filtered class distribution:")
+        for val, count in new_distribution.items():
+            print(f"  Class '{val}': {count} samples")
+else:
+    print(f"[ERROR] Target column '{target_col}' not found in dataframe!")
+    exit(1)
 
 missing_threshold = 0.5
 missing_pct = df.isnull().sum() / len(df)
