@@ -45,7 +45,7 @@ MAIN_SCRIPT="$TAB2IMG_DIR/run_vif.py"
 VENV_PATH="$PROJECT_DIR/venvMsc/bin/activate"
 
 # Training parameters (optimized for 83 datasets)
-TIMEOUT=5400    # 1.5 hours per dataset (reduced from 2h)
+TIMEOUT=10800     # 1.5 hours per dataset (reduced from 2h)
 
 #=======================================================================
 # Job Information
