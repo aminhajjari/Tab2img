@@ -555,28 +555,42 @@ def save_sample_images(model, test_data_loader, dataset_name, num_images=20):
                 if saved_count >= num_images:
                     break
     
-    fig, axes = plt.subplots(4, min(5, num_images), figsize=(15, 12))
-    if num_images < 5:
-        axes = axes.reshape(4, num_images)
+    # ============ FIXED GRID CREATION ============
+    num_saved = len(all_reconstructed)
+    num_cols = min(5, num_saved)  # Max 5 columns
+    num_rows = 2 * ((num_saved + num_cols - 1) // num_cols)  # 2 rows per image (orig + recon)
     
-    for idx in range(min(num_images, len(all_reconstructed))):
-        row = (idx // 5) * 2
-        col = idx % 5
-        
-        axes[row, col].imshow(all_originals[idx].squeeze(), cmap='gray')
-        axes[row, col].set_title(f'Original (Label: {all_labels[idx]})', fontsize=8)
-        axes[row, col].axis('off')
-        
-        axes[row + 1, col].imshow(all_reconstructed[idx], cmap='gray')
-        axes[row + 1, col].set_title(f'Generated', fontsize=8)
-        axes[row + 1, col].axis('off')
+    fig, axes = plt.subplots(num_rows, num_cols, figsize=(3*num_cols, 3*num_rows))
     
-    for idx in range(len(all_reconstructed), num_images):
-        row = (idx // 5) * 2
-        col = idx % 5
-        if row < 4 and col < axes.shape[1]:
-            axes[row, col].axis('off')
-            axes[row + 1, col].axis('off')
+    # Handle edge cases for axes dimensions
+    if num_rows == 1:
+        axes = axes.reshape(1, -1)
+    elif num_cols == 1:
+        axes = axes.reshape(-1, 1)
+    
+    # Flatten for easier iteration
+    axes_flat = axes.flatten()
+    
+    # Plot images
+    for idx in range(num_saved):
+        orig_idx = idx * 2
+        recon_idx = idx * 2 + 1
+        
+        # Original image
+        if orig_idx < len(axes_flat):
+            axes_flat[orig_idx].imshow(all_originals[idx].squeeze(), cmap='gray')
+            axes_flat[orig_idx].set_title(f'Original (Label: {all_labels[idx]})', fontsize=8)
+            axes_flat[orig_idx].axis('off')
+        
+        # Reconstructed image
+        if recon_idx < len(axes_flat):
+            axes_flat[recon_idx].imshow(all_reconstructed[idx], cmap='gray')
+            axes_flat[recon_idx].set_title(f'Generated', fontsize=8)
+            axes_flat[recon_idx].axis('off')
+    
+    # Hide any unused subplots
+    for idx in range(num_saved * 2, len(axes_flat)):
+        axes_flat[idx].axis('off')
     
     plt.tight_layout()
     grid_path = os.path.join(images_dir, 'comparison_grid.png')
@@ -584,6 +598,7 @@ def save_sample_images(model, test_data_loader, dataset_name, num_images=20):
     plt.close()
     print(f"[INFO] Saved comparison grid to: {grid_path}")
     
+    # Save individual images
     for idx, (orig, recon, label) in enumerate(zip(all_originals, all_reconstructed, all_labels)):
         orig_path = os.path.join(images_dir, f'sample_{idx:02d}_original_label{label}.png')
         plt.imsave(orig_path, orig.squeeze(), cmap='gray')
@@ -591,9 +606,9 @@ def save_sample_images(model, test_data_loader, dataset_name, num_images=20):
         recon_path = os.path.join(images_dir, f'sample_{idx:02d}_generated_label{label}.png')
         plt.imsave(recon_path, recon, cmap='gray')
     
-    print(f"[INFO] Saved {len(all_reconstructed)} individual image pairs")
+    print(f"[INFO] Saved {num_saved} individual image pairs")
     print(f"[INFO] Images saved to: {images_dir}")
-    return len(all_reconstructed), images_dir
+    return num_saved, images_dir
 
 # ========== TRAINING LOOP (NO MODEL SAVING) ==========
 print("\n" + "="*70)
