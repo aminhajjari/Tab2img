@@ -152,7 +152,7 @@ if target_col is None:
         'target', 'class', 'outcome', 'Class', 'binaryClass', 'status', 'Target',
         'TR', 'speaker', 'Home/Away', 'Outcome', 'Leaving_Certificate', 'technology',
         'signal', 'label', 'Label', 'click', 'percent_pell_grant', 'Survival',
-        'diagnosis', 'y', 'Author'
+        'diagnosis', 'y', 'Author', 'Utility'
     ]
     target_col = next((col for col in df.columns if col in target_col_candidates), None)
     if target_col:
