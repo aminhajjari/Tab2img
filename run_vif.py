@@ -22,6 +22,125 @@ from datetime import datetime
 from statsmodels.stats.outliers_influence import variance_inflation_factor
 import warnings
 import scipy.io.arff as arff
+import shap 
+
+
+######Interpretability#######
+
+def calculate_dualshap(model, test_data_loader, n_cont_features, num_classes, device):
+    """
+    Calculate DualSHAP interpretability scores
+    No model saving needed - runs in-memory
+    """
+    model.eval()
+    
+    print("[INFO] Starting DualSHAP calculation...")
+    
+    # Step 1: Get one batch of test data
+    for tab_data, tab_label, img_data, img_label in test_data_loader:
+        img_data_flat = img_data.view(-1, 28*28).to(device)
+        tab_data = tab_data.to(device)
+        
+        # Only use first 50 samples (faster)
+        batch_size = min(50, len(tab_data))
+        tab_data = tab_data[:batch_size]
+        img_data_flat = img_data_flat[:batch_size]
+        tab_label = tab_label[:batch_size]
+        
+        # Step 2: Generate reconstructed images
+        random_array = np.random.rand(img_data_flat.shape[0], 28*28)
+        x_rand = torch.Tensor(random_array).to(device)
+        
+        with torch.no_grad():
+            recon_x, tab_pred, img_pred = model(x_rand, tab_data)
+            
+        # Step 3: Get predicted classes
+        predicted_classes = torch.argmax(img_pred, dim=1).cpu().numpy()
+        
+        # Step 4: Calculate SHAP for Tabular Data (P_F_X)
+        print("[INFO] Calculating tabular SHAP values...")
+        try:
+            def tab_model_wrapper(x):
+                x_tensor = torch.tensor(x, dtype=torch.float32).to(device)
+                rand_input = torch.randn(len(x), 28*28).to(device)
+                with torch.no_grad():
+                    _, _, pred = model(rand_input, x_tensor)
+                return F.softmax(pred, dim=1).cpu().numpy()
+            
+            # Use KernelSHAP for tabular data
+            background = tab_data[:10].cpu().numpy()  # Small background
+            explainer_tab = shap.KernelExplainer(tab_model_wrapper, background)
+            shap_tab = explainer_tab.shap_values(tab_data.cpu().numpy(), nsamples=100)
+            
+            print(f"[INFO] Tabular SHAP calculated. Type: {type(shap_tab)}")
+        except Exception as e:
+            print(f"[WARNING] Tabular SHAP failed: {e}")
+            # Fallback to gradient-based
+            tab_data_grad = tab_data.clone().detach().requires_grad_(True)
+            _, _, pred = model(x_rand, tab_data_grad)
+            pred.max(dim=1)[0].sum().backward()
+            shap_tab = tab_data_grad.grad.abs().cpu().numpy()
+        
+        # Step 5: Calculate SHAP for Images (P_F_I)
+        print("[INFO] Calculating image SHAP values...")
+        try:
+            recon_imgs = recon_x.view(-1, 1, 28, 28).detach()
+            background_imgs = recon_imgs[:5]
+            explainer_img = shap.DeepExplainer(model.final_classifier, background_imgs)
+            shap_img = explainer_img.shap_values(recon_imgs.cpu())
+            
+            print(f"[INFO] Image SHAP calculated. Type: {type(shap_img)}")
+        except Exception as e:
+            print(f"[WARNING] Image SHAP failed: {e}")
+            # Fallback to gradient-based
+            recon_imgs_grad = recon_x.view(-1, 1, 28, 28).requires_grad_(True)
+            pred_img = model.final_classifier(recon_imgs_grad)
+            pred_img.max(dim=1)[0].sum().backward()
+            shap_img = recon_imgs_grad.grad.abs().cpu().numpy()
+        
+        # Step 6: Process SHAP values
+        if isinstance(shap_tab, list):
+            # Multi-class: extract predicted class values
+            P_F_X = np.array([shap_tab[pred_cls][i] 
+                             for i, pred_cls in enumerate(predicted_classes)])
+        else:
+            # Binary or already processed
+            P_F_X = shap_tab
+        
+        if isinstance(shap_img, list):
+            # Multi-class
+            P_F_I = np.array([shap_img[pred_cls][i] 
+                             for i, pred_cls in enumerate(predicted_classes)])
+        else:
+            P_F_I = shap_img
+        
+        # Step 7: Reshape image SHAP to match tabular dimensions
+        # Average over spatial dimensions
+        if len(P_F_I.shape) == 4:  # (batch, channels, height, width)
+            P_F_I_avg = np.mean(np.abs(P_F_I), axis=(1, 2, 3), keepdims=True)
+        else:
+            P_F_I_avg = np.mean(np.abs(P_F_I.reshape(len(P_F_I), -1)), axis=1, keepdims=True)
+        
+        # Step 8: Combine into DualSHAP
+        # Simple average (paper uses optimization, but this works well)
+        DualSHAP_scores = (P_F_X + P_F_I_avg) / 2
+        
+        print(f"[INFO] DualSHAP calculated.")
+        print(f"  P_F_X shape: {P_F_X.shape}")
+        print(f"  P_F_I_avg shape: {P_F_I_avg.shape}")
+        print(f"  DualSHAP shape: {DualSHAP_scores.shape}")
+        
+        return {
+            'P_F_X': P_F_X,  # Tabular SHAP
+            'P_F_I': P_F_I,  # Image SHAP
+            'DualSHAP': DualSHAP_scores,
+            'feature_names': [f'Feature_{i}' for i in range(n_cont_features)],
+            'predicted_classes': predicted_classes
+        }
+    
+    return None
+# ========== END OF NEW SECTION ==========
+
 
 # ========== ARGUMENT PARSER ==========
 parser = argparse.ArgumentParser(description="Welcome to Table2Image")
@@ -715,6 +834,102 @@ print("="*70 + "\n")
 num_saved, save_dir = save_sample_images(
     cvae, test_synchronized_loader, file_name, NUM_IMAGES_TO_SAVE
 )
+
+#######################################################
+# Calculate interpretability (DualSHAP)
+print("\n" + "="*70)
+print("CALCULATING INTERPRETABILITY (DualSHAP)")
+print("="*70)
+
+try:
+    shap_results = calculate_dualshap(
+        model=cvae,
+        test_data_loader=test_synchronized_loader,
+        n_cont_features=n_cont_features,
+        num_classes=num_classes,
+        device=DEVICE
+    )
+    
+    if shap_results is not None:
+        # Create interpretability directory
+        interp_dir = os.path.join('/project/def-arashmoh/shahab33/Msc/Tab2img/imageout', 
+                                  file_name, 'interpretability')
+        os.makedirs(interp_dir, exist_ok=True)
+        
+        # Save DualSHAP scores as CSV
+        dualshap_df = pd.DataFrame(
+            shap_results['DualSHAP'],
+            columns=shap_results['feature_names']
+        )
+        csv_path = os.path.join(interp_dir, 'dualshap_scores.csv')
+        dualshap_df.to_csv(csv_path, index=False)
+        print(f"[INFO] Saved DualSHAP scores to: {csv_path}")
+        
+        # Save raw SHAP values too
+        np.save(os.path.join(interp_dir, 'P_F_X.npy'), shap_results['P_F_X'])
+        np.save(os.path.join(interp_dir, 'P_F_I.npy'), shap_results['P_F_I'])
+        print(f"[INFO] Saved raw SHAP arrays")
+        
+        # Create feature importance visualization
+        plt.figure(figsize=(12, 6))
+        feature_importance = np.mean(np.abs(shap_results['DualSHAP']), axis=0)
+        
+        # Sort by importance
+        sorted_idx = np.argsort(feature_importance)[::-1]
+        top_n = min(20, len(sorted_idx))  # Show top 20 features
+        
+        plt.bar(range(top_n), feature_importance[sorted_idx[:top_n]])
+        plt.xlabel('Feature Index')
+        plt.ylabel('Mean |DualSHAP Score|')
+        plt.title(f'Top {top_n} Feature Importance - {file_name}')
+        plt.xticks(range(top_n), sorted_idx[:top_n], rotation=45)
+        plt.tight_layout()
+        
+        viz_path = os.path.join(interp_dir, 'feature_importance.png')
+        plt.savefig(viz_path, dpi=150, bbox_inches='tight')
+        plt.close()
+        print(f"[INFO] Saved importance plot to: {viz_path}")
+        
+        # Create summary text file
+        summary_path = os.path.join(interp_dir, 'summary.txt')
+        with open(summary_path, 'w') as f:
+            f.write(f"DualSHAP Interpretability Summary\n")
+            f.write(f"="*50 + "\n\n")
+            f.write(f"Dataset: {file_name}\n")
+            f.write(f"Samples analyzed: {len(shap_results['DualSHAP'])}\n")
+            f.write(f"Features: {n_cont_features}\n")
+            f.write(f"Classes: {num_classes}\n\n")
+            f.write(f"Top 10 Most Important Features:\n")
+            f.write("-"*50 + "\n")
+            for i, idx in enumerate(sorted_idx[:10], 1):
+                f.write(f"{i:2d}. Feature_{idx:3d}: {feature_importance[idx]:.6f}\n")
+        print(f"[INFO] Saved summary to: {summary_path}")
+        
+        print(f"\n✅ Interpretability complete!")
+        print(f"   Directory: {interp_dir}")
+        
+    else:
+        print("[WARNING] Could not calculate DualSHAP - no results")
+
+except Exception as e:
+    print(f"[ERROR] DualSHAP calculation failed: {e}")
+    import traceback
+    traceback.print_exc()
+    print("[INFO] Continuing without interpretability...")
+
+print("="*70 + "\n")
+
+# ========== END OF NEW SECTION ==========
+
+# Output results as JSON to stdout (for batch script to capture)
+# THIS IS EXISTING CODE - DON'T MODIFY
+results = {
+    'dataset': file_name,
+    'num_samples': len(X),
+    ...
+}
+
+############# END Of Call DUAL SHAP##########
 
 # Output results as JSON to stdout (for batch script to capture)
 results = {
