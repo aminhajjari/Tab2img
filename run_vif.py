@@ -401,6 +401,8 @@ parser.add_argument('--save_dir', type=str, required=False, default=None,
                    help='Directory to save results (optional, for compatibility)')
 parser.add_argument('--num_images', type=int, default=20,
                    help='Number of sample images to save (default: 20)')
+parser.add_argument('--interp_root', type=str, default=None,  # 🆕 NEW
+                   help='Root directory for interpretability results (optional)')
 args = parser.parse_args()
 
 # ========== PARAMETERS ==========
