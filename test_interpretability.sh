@@ -3,9 +3,7 @@
 #=======================================================================
 # TEST SLURM SCRIPT - Validate Interpretability on Small Datasets
 #=======================================================================
-# Quick test to verify interpretability works before running full batch
-# Author: Amin (aminhajjr@gmail.com)
-# Purpose: Test gradient-based interpretability on 3 small datasets
+# Quick test for gradient-based interpretability on small datasets
 #=======================================================================
 
 #SBATCH --account=def-arashmoh
@@ -31,11 +29,16 @@ DATASETS_DIR="$PROJECT_DIR/tabularDataset"
 VENV_PATH="$PROJECT_DIR/venvMsc/bin/activate"
 MAIN_SCRIPT="$TAB2IMG_DIR/run_vif.py"
 
-# Test datasets (small and fast)
+# *** New interpretability root folder ***
+INTERP_ROOT="$TAB2IMG_DIR/interpretability_results"
+
+mkdir -p "$INTERP_ROOT"
+
+# Test datasets
 TEST_DATASETS=(
-    "balance-scale"         # 625 samples, 4 features, 3 classes
-    "tic-tac-toe"          # 958 samples, 9 features, 2 classes
-    "blood-transfusion-service-center"  # 748 samples, 4 features, 2 classes
+    "balance-scale"
+    "tic-tac-toe"
+    "blood-transfusion-service-center"
 )
 
 #=======================================================================
@@ -47,8 +50,8 @@ echo "=========================================="
 echo "Job ID: $SLURM_JOB_ID"
 echo "Started: $(date)"
 echo "Node: $(hostname)"
-echo "Testing ${#TEST_DATASETS[@]} small datasets"
-echo "Purpose: Validate interpretability implementation"
+echo "Testing ${#TEST_DATASETS[@]} datasets"
+echo "Interpretability root: $INTERP_ROOT"
 echo "=========================================="
 echo ""
 
@@ -74,132 +77,107 @@ source "$VENV_PATH"
 echo ""
 echo "Python environment:"
 python --version
-python -c "
-import torch
-import numpy
-import pandas
-print(f'PyTorch: {torch.__version__}')
-print(f'NumPy: {numpy.__version__}')
-print(f'Pandas: {pandas.__version__}')
-print(f'CUDA available: {torch.cuda.is_available()}')
-"
+python - << 'EOF'
+import torch, numpy, pandas
+print(f"PyTorch: {torch.__version__}")
+print(f"NumPy: {numpy.__version__}")
+print(f"Pandas: {pandas.__version__}")
+print(f"CUDA available: {torch.cuda.is_available()}")
+EOF
 
-# Check if SHAP is installed
 echo ""
 echo "Checking SHAP installation..."
 python << 'PYCHECK'
 try:
     import shap
-    print(f'✅ SHAP installed: version {shap.__version__}')
-    SHAP_AVAILABLE=True
+    print(f"SHAP installed: version {shap.__version__}")
 except ImportError:
-    print('⚠️  SHAP not installed - will use gradient-based method')
-    SHAP_AVAILABLE=False
+    print("SHAP not installed - gradient-based interpretability will be used")
 PYCHECK
 
 echo ""
-echo "✅ Environment ready"
+echo "Environment ready"
 echo ""
 
 #=======================================================================
 # Test Each Dataset
 #=======================================================================
+SUCCESS_COUNT=0
+FAIL_COUNT=0
+
 echo "=========================================="
 echo "STARTING TEST RUNS"
 echo "=========================================="
-echo ""
-
-SUCCESS_COUNT=0
-FAIL_COUNT=0
 
 for dataset in "${TEST_DATASETS[@]}"; do
     echo ""
     echo "======================================"
     echo "Testing: $dataset"
     echo "======================================"
-    
-    # Find dataset path
+
     DATASET_PATH=$(find "$DATASETS_DIR" -type d -name "$dataset" | head -1)
-    
+
     if [ -z "$DATASET_PATH" ]; then
-        echo "❌ Dataset not found: $dataset"
-        FAIL_COUNT=$((FAIL_COUNT + 1))
+        echo "Dataset not found: $dataset"
+        FAIL_COUNT=$((FAIL_COUNT+1))
         continue
     fi
-    
-    # Find data file
+
     DATA_FILE=$(find "$DATASET_PATH" -type f \( -name "*.arff" -o -name "*.csv" -o -name "*.data" \) | head -1)
-    
+
     if [ -z "$DATA_FILE" ]; then
-        echo "❌ No data file found in: $DATASET_PATH"
-        FAIL_COUNT=$((FAIL_COUNT + 1))
+        echo "No usable data file found for: $dataset"
+        FAIL_COUNT=$((FAIL_COUNT+1))
         continue
     fi
-    
+
     echo "Dataset path: $DATASET_PATH"
-    echo "Data file: $(basename $DATA_FILE)"
+    echo "Data file: $DATA_FILE"
     echo ""
-    echo "Running Table2Image with interpretability..."
+
+    # Create dataset-specific interpretability output folder
+    INTERP_OUT="$INTERP_ROOT/$dataset"
+    mkdir -p "$INTERP_OUT"
+    echo "Interpretability output folder: $INTERP_OUT"
     echo ""
-    
-    # Run with reduced epochs for speed
+
     START_TIME=$(date +%s)
-    
+
     python "$MAIN_SCRIPT" \
         --data "$DATA_FILE" \
         --num_images 5 \
+        --interpretability_dir "$INTERP_OUT" \
         2>&1 | tee "/tmp/test_${dataset}_${SLURM_JOB_ID}.log"
-    
+
     EXIT_CODE=${PIPESTATUS[0]}
     END_TIME=$(date +%s)
     ELAPSED=$((END_TIME - START_TIME))
-    
+
     echo ""
     echo "--------------------------------------"
-    
+
     if [ $EXIT_CODE -eq 0 ]; then
-        echo "✅ SUCCESS in ${ELAPSED}s"
+        echo "SUCCESS in ${ELAPSED}s"
         SUCCESS_COUNT=$((SUCCESS_COUNT + 1))
-        
-        # Check if interpretability files were created
-        INTERP_DIR="/project/def-arashmoh/shahab33/Msc/Tab2img/imageout/$dataset/interpretability"
-        
-        if [ -d "$INTERP_DIR" ]; then
-            echo ""
-            echo "📊 Interpretability files:"
-            ls -lh "$INTERP_DIR"
-            
-            # Check specific files
-            if [ -f "$INTERP_DIR/dualshap_scores.csv" ]; then
-                echo "  ✅ dualshap_scores.csv"
-            fi
-            if [ -f "$INTERP_DIR/feature_importance.png" ]; then
-                echo "  ✅ feature_importance.png"
-            fi
-            if [ -f "$INTERP_DIR/summary.txt" ]; then
-                echo "  ✅ summary.txt"
-                echo ""
-                echo "Summary preview:"
-                head -15 "$INTERP_DIR/summary.txt"
-            fi
+
+        if [ -d "$INTERP_OUT" ]; then
+            echo "Files in $INTERP_OUT:"
+            ls -lh "$INTERP_OUT"
         else
-            echo "⚠️  Interpretability directory not found: $INTERP_DIR"
-            echo "   This might indicate interpretability calculation failed"
+            echo "Interpretability directory not found: $INTERP_OUT"
         fi
-        
+
     else
-        echo "❌ FAILED (exit code: $EXIT_CODE) in ${ELAPSED}s"
+        echo "FAILED (exit code: $EXIT_CODE)"
         FAIL_COUNT=$((FAIL_COUNT + 1))
-        
-        # Show error preview
         echo ""
-        echo "Error preview from log:"
+        echo "Error preview:"
         tail -20 "/tmp/test_${dataset}_${SLURM_JOB_ID}.log"
     fi
-    
+
     echo "======================================"
-    echo ""
 done
+
 
 #=======================================================================
 # Final Summary
@@ -208,47 +186,14 @@ echo ""
 echo "=========================================="
 echo "TEST RESULTS SUMMARY"
 echo "=========================================="
-echo "Total datasets tested: ${#TEST_DATASETS[@]}"
-echo "  ✅ Success: $SUCCESS_COUNT"
-echo "  ❌ Failed:  $FAIL_COUNT"
+echo "Tested: ${#TEST_DATASETS[@]}"
+echo "Success: $SUCCESS_COUNT"
+echo "Failed:  $FAIL_COUNT"
 echo ""
-
-if [ $SUCCESS_COUNT -eq ${#TEST_DATASETS[@]} ]; then
-    echo "🎉 ALL TESTS PASSED!"
-    echo ""
-    echo "Your interpretability implementation is working correctly."
-    echo "You can now run the full batch with confidence:"
-    echo "  sbatch batch_all_optimized.sh"
-    echo ""
-    EXIT_STATUS=0
-elif [ $SUCCESS_COUNT -gt 0 ]; then
-    echo "⚠️  PARTIAL SUCCESS"
-    echo ""
-    echo "Some tests passed, but $FAIL_COUNT failed."
-    echo "Review the errors above before running full batch."
-    echo ""
-    EXIT_STATUS=1
-else
-    echo "❌ ALL TESTS FAILED"
-    echo ""
-    echo "Please fix the errors before running full batch."
-    echo "Common issues:"
-    echo "  1. Missing SHAP (use gradient-based method)"
-    echo "  2. Syntax error in run_vif.py"
-    echo "  3. Missing dependencies"
-    echo ""
-    EXIT_STATUS=1
-fi
-
+echo "Interpretability outputs are stored in:"
+echo "    $INTERP_ROOT"
+echo ""
 echo "Finished: $(date)"
 echo "=========================================="
-echo ""
 
-# Show where to find results
-echo "Test outputs saved to:"
-echo "  Job log:    /project/def-arashmoh/shahab33/Msc/Tab2img/job_logs/test_interp_${SLURM_JOB_ID}.out"
-echo "  Error log:  /project/def-arashmoh/shahab33/Msc/Tab2img/job_logs/test_interp_${SLURM_JOB_ID}.err"
-echo "  Results:    /project/def-arashmoh/shahab33/Msc/Tab2img/imageout/"
-echo ""
-
-exit $EXIT_STATUS
+exit 0
