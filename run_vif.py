@@ -412,6 +412,9 @@ data_path = args.data
 file_name = os.path.basename(os.path.dirname(data_path))
 DATASET_ROOT = '/project/def-arashmoh/shahab33/Msc/datasets'
 
+csv_name = file_name  # Use file_name as csv_name for SHAP output
+index = "0"           # Default index for experiment tracking
+
 USE_CUDA = torch.cuda.is_available()
 DEVICE = torch.device('cuda' if USE_CUDA else 'cpu')
 
