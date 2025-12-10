@@ -919,15 +919,7 @@ except Exception as e:
 
 print("="*70 + "\n")
 
-# ========== END OF NEW SECTION ==========
 
-# Output results as JSON to stdout (for batch script to capture)
-# THIS IS EXISTING CODE - DON'T MODIFY
-results = {
-    'dataset': file_name,
-    'num_samples': len(X),
-    ...
-}
 
 ############# END Of Call DUAL SHAP##########
 
