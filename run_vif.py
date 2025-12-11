@@ -883,7 +883,8 @@ cvae = CVAEWithTabEmbedding(
     latent_size=8,
     vif_values=vif_values
 ).to(DEVICE)
-optimizer = optim.AdamW(cvae.parameters(), lr=0.001)
+optimizer = optim.AdamW(cvae.parameters(), lr=0.001, weight_decay=1e-4)
+
 print(f"[INFO] Model created with {sum(p.numel() for p in cvae.parameters())} parameters")
 
 def loss_function(recon_x, x, tab_pred, tab_labels, img_pred, img_labels):
