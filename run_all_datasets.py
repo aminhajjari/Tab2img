@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 """
-Batch processor for Table2Image across all OpenML datasets
-Organized output structure with separate folders for CSVs, logs, and LaTeX
-Model saving is DISABLED - only results and images are saved
+Batch processor for Table2Image-VIF across all OpenML datasets
+Enhanced with Weight Decay + Dual SHAP Interpretability
 """
 
 import os
@@ -24,11 +23,12 @@ def create_output_structure(base_output_dir, job_id):
     
     run_dir = os.path.join(base_output_dir, run_name)
     
-    # Create subdirectories (no 'models' folder)
+    # Create subdirectories
     subdirs = {
         'csv': os.path.join(run_dir, 'csv'),
         'latex': os.path.join(run_dir, 'latex'),
-        'logs': os.path.join(run_dir, 'logs')
+        'logs': os.path.join(run_dir, 'logs'),
+        'interpretability': os.path.join(run_dir, 'interpretability')  # 🆕 Centralized SHAP
     }
     
     for subdir in subdirs.values():
@@ -37,39 +37,40 @@ def create_output_structure(base_output_dir, job_id):
     # Create README with run information
     readme_path = os.path.join(run_dir, 'README.txt')
     with open(readme_path, 'w') as f:
-        f.write(f"Table2Image Batch Processing Results\n")
+        f.write(f"Table2Image-VIF Batch Processing Results\n")
         f.write(f"="*50 + "\n\n")
         f.write(f"Job ID: {job_id}\n")
         f.write(f"Started: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+        f.write(f"\nConfiguration:\n")
+        f.write(f"  - Weight Decay: 1e-4 (AdamW optimizer)\n")
+        f.write(f"  - Dual SHAP Interpretability: Enabled\n")
+        f.write(f"  - Model Saving: Disabled\n")
         f.write(f"\nFolder Structure:\n")
-        f.write(f"  csv/      - Results in CSV format\n")
-        f.write(f"  latex/    - LaTeX tables for paper\n")
-        f.write(f"  logs/     - Processing logs (JSONL format)\n")
-        f.write(f"\nNOTE: Model checkpoints are NOT saved.\n")
-        f.write(f"      Images are saved to: /project/def-arashmoh/shahab33/Msc/Tab2img/imageout/\n")
+        f.write(f"  csv/              - Results in CSV format\n")
+        f.write(f"  latex/            - LaTeX tables for paper\n")
+        f.write(f"  logs/             - Processing logs (JSONL format)\n")
+        f.write(f"  interpretability/ - Dual SHAP outputs (9 files per dataset)\n")
+        f.write(f"\nImages saved to: /project/def-arashmoh/shahab33/Msc/Tab2img/imageout/\n")
     
     return run_dir, subdirs
 
 def find_datasets(datasets_dir):
     """
     Find all dataset files in folder structure
-    Each dataset is in its own folder with potentially different filename
     """
     dataset_files = []
     datasets_path = Path(datasets_dir)
     
-    # Iterate through each folder
     for folder in sorted(datasets_path.iterdir()):
         if not folder.is_dir():
             continue
         
-        # Search for data files in this folder
+        # Search for data files
         found_files = []
         for pattern in ['*.csv', '*.arff', '*.data']:
             found_files.extend(list(folder.glob(pattern)))
         
         if found_files:
-            # Use the first file found (assuming one data file per folder)
             dataset_files.append(found_files[0])
             if len(found_files) > 1:
                 print(f"[INFO] Folder '{folder.name}' has {len(found_files)} files, using: {found_files[0].name}")
@@ -78,9 +79,46 @@ def find_datasets(datasets_dir):
     
     return dataset_files
 
+def validate_interpretability_files(dataset_name, interp_root):
+    """
+    🆕 Validate that all 9 dual SHAP files are present
+    """
+    interp_dir = os.path.join(interp_root, dataset_name, 'dual_shap_interpretability')
+    
+    if not os.path.exists(interp_dir):
+        return False, 0, "Directory not found"
+    
+    expected_files = {
+        'csv': 3,  # dual_shap_summary, shap_tab2img, shap_tab2tab
+        'png': 3,  # importance plots
+        'npy': 2,  # raw SHAP arrays
+        'txt': 1   # report
+    }
+    
+    actual_counts = {
+        'csv': len(list(Path(interp_dir).glob('*.csv'))),
+        'png': len(list(Path(interp_dir).glob('*.png'))),
+        'npy': len(list(Path(interp_dir).glob('*.npy'))),
+        'txt': len(list(Path(interp_dir).glob('*.txt')))
+    }
+    
+    total_files = sum(actual_counts.values())
+    expected_total = sum(expected_files.values())
+    
+    is_complete = (actual_counts == expected_files)
+    
+    if is_complete:
+        return True, total_files, "Complete"
+    else:
+        missing = []
+        for ext, expected in expected_files.items():
+            if actual_counts[ext] < expected:
+                missing.append(f"{ext}:{actual_counts[ext]}/{expected}")
+        return False, total_files, f"Missing: {', '.join(missing)}"
+
 def run_single_dataset(dataset_path, subdirs, script_path, timeout):
     """
-    Run Table2Image on a single dataset
+    Run Table2Image-VIF on a single dataset with interpretability
     """
     dataset_name = dataset_path.parent.name
     
@@ -89,12 +127,14 @@ def run_single_dataset(dataset_path, subdirs, script_path, timeout):
     print(f"{'='*70}")
     print(f"Folder: {dataset_path.parent.name}")
     print(f"File: {dataset_path.name}")
-    print(f"Model saving is DISABLED - only results and images will be saved")
+    print(f"Features: Weight Decay (1e-4) + Dual SHAP Interpretability")
     
-    # Build command (no --save_dir needed)
+    # 🆕 Build command with --interp_root for centralized interpretability
     cmd = [
         'python', script_path,
-        '--data', str(dataset_path)
+        '--data', str(dataset_path),
+        '--num_images', '5',
+        '--interp_root', subdirs['interpretability']  # 🆕 Centralized output
     ]
     
     # Run with timeout
@@ -112,7 +152,7 @@ def run_single_dataset(dataset_path, subdirs, script_path, timeout):
         if result.returncode == 0:
             print(f"✅ SUCCESS in {elapsed:.1f}s")
             
-            # Extract JSON results from stdout
+            # Extract JSON results
             results_data = None
             try:
                 stdout = result.stdout
@@ -121,17 +161,31 @@ def run_single_dataset(dataset_path, subdirs, script_path, timeout):
                     json_end = stdout.find("RESULTS_JSON_END")
                     json_str = stdout[json_start:json_end].strip()
                     results_data = json.loads(json_str)
-                    print(f"📊 Accuracy: {results_data.get('best_accuracy', 0):.2f}%")
+                    print(f"📊 Tabular Accuracy: {results_data.get('best_accuracy', 0):.2f}%")
                     print(f"📊 AUC: {results_data.get('best_auc', 0):.4f}")
                     print(f"🖼️  Images: {results_data.get('images_dir', 'N/A')}")
             except Exception as e:
                 print(f"⚠️  Could not parse results: {e}")
+            
+            # 🆕 Validate interpretability files
+            is_complete, file_count, status = validate_interpretability_files(
+                dataset_name, 
+                subdirs['interpretability']
+            )
+            
+            if is_complete:
+                print(f"✅ Interpretability: {file_count}/9 files complete")
+            else:
+                print(f"⚠️  Interpretability: {file_count}/9 files ({status})")
             
             return {
                 'status': 'success',
                 'dataset': dataset_name,
                 'elapsed_time': elapsed,
                 'results': results_data,
+                'interpretability_complete': is_complete,
+                'interpretability_files': file_count,
+                'interpretability_status': status,
                 'stdout': result.stdout,
                 'stderr': result.stderr
             }
@@ -176,7 +230,6 @@ def parse_results_jsonl(subdirs):
         print(f"[WARNING] No results file found at {results_file}")
         return None
     
-    # Read all results
     results = []
     with open(results_file, 'r') as f:
         for line in f:
@@ -189,17 +242,14 @@ def parse_results_jsonl(subdirs):
         print("[WARNING] No valid results found in results.jsonl")
         return None
     
-    # Convert to DataFrame
     df = pd.DataFrame(results)
-    
-    # Sort by accuracy descending
     df = df.sort_values('best_accuracy', ascending=False)
     
     return df
 
 def create_summary_tables(df, subdirs, run_dir):
     """
-    Create CSV and LaTeX summary tables with average accuracy
+    Create CSV and LaTeX summary tables with enhanced statistics
     """
     if df is None or len(df) == 0:
         print("[WARNING] No results to summarize")
@@ -227,10 +277,14 @@ def create_summary_tables(df, subdirs, run_dir):
     df.to_csv(csv_detailed_path, index=False)
     print(f"✅ Detailed results: {csv_detailed_path}")
     
-    # ========== 3. STATISTICS CSV ==========
+    # ========== 3. 🆕 ENHANCED STATISTICS CSV ==========
     stats_data = {
-        'Metric': ['Average Accuracy', 'Std Accuracy', 'Average AUC', 'Std AUC',
-                   'Best Accuracy', 'Worst Accuracy', 'Datasets >90%', 'Datasets >95%'],
+        'Metric': [
+            'Average Accuracy', 'Std Accuracy', 'Average AUC', 'Std AUC',
+            'Best Accuracy', 'Worst Accuracy', 'Median Accuracy',
+            'Datasets >90%', 'Datasets >95%', 'Datasets >99%',
+            'Configuration', 'Weight Decay', 'Interpretability'
+        ],
         'Value': [
             f"{avg_accuracy:.2f}",
             f"{std_accuracy:.2f}",
@@ -238,8 +292,13 @@ def create_summary_tables(df, subdirs, run_dir):
             f"{std_auc:.4f}",
             f"{summary_df['best_accuracy'].max():.2f}",
             f"{summary_df['best_accuracy'].min():.2f}",
+            f"{summary_df['best_accuracy'].median():.2f}",
             len(summary_df[summary_df['best_accuracy'] > 90]),
-            len(summary_df[summary_df['best_accuracy'] > 95])
+            len(summary_df[summary_df['best_accuracy'] > 95]),
+            len(summary_df[summary_df['best_accuracy'] > 99]),
+            'AdamW + VIF Initialization',
+            '1e-4',
+            'Dual SHAP (9 files/dataset)'
         ]
     }
     stats_df = pd.DataFrame(stats_data)
@@ -247,11 +306,11 @@ def create_summary_tables(df, subdirs, run_dir):
     stats_df.to_csv(csv_stats_path, index=False)
     print(f"✅ Statistics: {csv_stats_path}")
     
-    # ========== 4. LATEX TABLE (Top 20) ==========
+    # ========== 4. LATEX TABLE ==========
     latex_path = os.path.join(subdirs['latex'], 'results_latex.txt')
     with open(latex_path, 'w') as f:
-        f.write("% LaTeX Table for Paper - Table2Image Results\n")
-        f.write("% Top 20 datasets + average\n\n")
+        f.write("% LaTeX Table for Paper - Table2Image-VIF Results\n")
+        f.write("% With Weight Decay (1e-4) + Dual SHAP Interpretability\n\n")
         
         f.write("\\begin{table}[htbp]\n")
         f.write("\\centering\n")
@@ -287,48 +346,41 @@ def create_summary_tables(df, subdirs, run_dir):
         f.write("\\hline\n")
         f.write("\\end{tabular}\n")
         f.write("\\end{table}\n")
+        
+        # 🆕 Add note about robustness
+        f.write("\n% Note: Results obtained with:\n")
+        f.write("% - Weight decay (lambda=1e-4) for improved generalization\n")
+        f.write("% - Dual SHAP interpretability for cross-modal and within-modal feature importance\n")
     
     print(f"✅ LaTeX table: {latex_path}")
     
-    # ========== 5. COMPARISON TABLE ==========
-    comparison_path = os.path.join(subdirs['latex'], 'comparison_table.txt')
-    with open(comparison_path, 'w') as f:
-        f.write("% Comparison with Other Methods (Table 1 format from paper)\n")
-        f.write("% Fill in baseline results from the paper\n\n")
-        
-        f.write("\\begin{table}[htbp]\n")
-        f.write("\\centering\n")
-        f.write("\\caption{Performance Comparison on OpenML-CC18}\n")
-        f.write("\\label{tab:comparison}\n")
-        f.write("\\begin{tabular}{lcc}\n")
-        f.write("\\hline\n")
-        f.write("\\textbf{Model} & \\textbf{Avg Accuracy} & \\textbf{Avg AUC} \\\\\n")
-        f.write("\\hline\n")
-        
-        # Your results
-        f.write(f"\\textbf{{Table2Image-VIF (Ours)}} & "
-                f"\\textbf{{{avg_accuracy:.2f}}} & "
-                f"\\textbf{{{avg_auc:.4f}}} \\\\\n")
-        
-        # From paper Table 1 (OpenML-CC18 results)
-        f.write("\\hline\n")
-        f.write("Table2Image (baseline) & 87.66 & 0.9202 \\\\\n")
-        f.write("XGBoost & 86.75 & 0.8758 \\\\\n")
-        f.write("LightGBM & 86.12 & 0.9116 \\\\\n")
-        f.write("CatBoost & 86.26 & 0.9146 \\\\\n")
-        f.write("FT-Transformer & 83.13 & 0.9016 \\\\\n")
-        f.write("TuneTables & 86.50 & 0.9145 \\\\\n")
-        f.write("TabM & 84.11 & 0.8960 \\\\\n")
-        
-        f.write("\\hline\n")
-        f.write("\\end{tabular}\n")
-        f.write("\\end{table}\n")
+    # ========== 5. 🆕 INTERPRETABILITY SUMMARY ==========
+    interp_summary_path = os.path.join(subdirs['csv'], 'interpretability_summary.csv')
     
-    print(f"✅ Comparison table: {comparison_path}")
+    # Check interpretability completion
+    interp_data = []
+    for dataset_name in summary_df['dataset']:
+        is_complete, file_count, status = validate_interpretability_files(
+            dataset_name,
+            subdirs['interpretability']
+        )
+        interp_data.append({
+            'dataset': dataset_name,
+            'complete': is_complete,
+            'file_count': file_count,
+            'status': status
+        })
+    
+    interp_df = pd.DataFrame(interp_data)
+    interp_df.to_csv(interp_summary_path, index=False)
+    print(f"✅ Interpretability summary: {interp_summary_path}")
+    
+    complete_count = sum(interp_df['complete'])
+    print(f"   📊 {complete_count}/{len(interp_df)} datasets have complete interpretability files")
     
     # ========== 6. PRINT SUMMARY ==========
     print(f"\n{'='*70}")
-    print(f"SUMMARY STATISTICS")
+    print(f"SUMMARY STATISTICS (With Weight Decay 1e-4)")
     print(f"{'='*70}")
     print(f"Total datasets: {len(summary_df)}")
     print(f"")
@@ -340,6 +392,9 @@ def create_summary_tables(df, subdirs, run_dir):
     print(f"")
     print(f"Datasets with >90% accuracy: {len(summary_df[summary_df['best_accuracy'] > 90])}")
     print(f"Datasets with >95% accuracy: {len(summary_df[summary_df['best_accuracy'] > 95])}")
+    print(f"Datasets with >99% accuracy: {len(summary_df[summary_df['best_accuracy'] > 99])}")
+    print(f"")
+    print(f"🔍 Interpretability: {complete_count}/{len(summary_df)} datasets complete")
     print(f"{'='*70}\n")
     
     # Update README with final results
@@ -351,10 +406,11 @@ def create_summary_tables(df, subdirs, run_dir):
         f.write(f"Datasets processed: {len(summary_df)}\n")
         f.write(f"Average Accuracy: {avg_accuracy:.2f}% ± {std_accuracy:.2f}%\n")
         f.write(f"Average AUC: {avg_auc:.4f} ± {std_auc:.4f}\n")
+        f.write(f"Interpretability Complete: {complete_count}/{len(summary_df)}\n")
 
 def main():
     parser = argparse.ArgumentParser(
-        description='Batch process all OpenML datasets with Table2Image'
+        description='Batch process all OpenML datasets with Table2Image-VIF + Interpretability'
     )
     parser.add_argument('--datasets_dir', type=str, required=True,
                         help='Directory containing dataset folders')
@@ -365,7 +421,7 @@ def main():
     parser.add_argument('--script_path', type=str, required=True,
                         help='Path to run_vif.py')
     parser.add_argument('--timeout', type=int, default=7200,
-                        help='Timeout per dataset in seconds')
+                        help='Timeout per dataset in seconds (default: 2 hours)')
     parser.add_argument('--skip_existing', action='store_true',
                         help='Skip datasets that already have results')
     
@@ -373,13 +429,15 @@ def main():
     
     # Create organized output structure
     print(f"{'='*70}")
-    print(f"SETTING UP OUTPUT STRUCTURE")
+    print(f"TABLE2IMAGE-VIF BATCH PROCESSOR")
+    print(f"Configuration: Weight Decay (1e-4) + Dual SHAP Interpretability")
     print(f"{'='*70}")
     run_dir, subdirs = create_output_structure(args.output_base, args.job_id)
     print(f"Output directory: {run_dir}")
-    print(f"  📊 csv/    → {subdirs['csv']}")
-    print(f"  📄 latex/  → {subdirs['latex']}")
-    print(f"  📝 logs/    → {subdirs['logs']}")
+    print(f"  📊 csv/              → {subdirs['csv']}")
+    print(f"  📄 latex/            → {subdirs['latex']}")
+    print(f"  📝 logs/             → {subdirs['logs']}")
+    print(f"  🔍 interpretability/ → {subdirs['interpretability']}")
     print(f"{'='*70}\n")
     
     # Find all datasets
@@ -417,8 +475,8 @@ def main():
         
         print(f"\n{'='*70}")
         print(f"Progress: {i}/{len(dataset_files)} datasets")
-        print(f"Elapsed: {elapsed_hours:.1f}h | Remaining: ~{remaining * 0.5:.1f}h")
-        print(f"✅ {success_count} | ❌ {failed_count} | ⏱️ {timeout_count}")
+        print(f"Elapsed: {elapsed_hours:.1f}h | Remaining: ~{remaining * 0.1:.1f}h")
+        print(f"✅ {success_count} | ❌ {failed_count} | ⏱️ {timeout_count} | ⏭️ {skipped_count}")
         print(f"{'='*70}")
         
         # Check if already processed
@@ -456,7 +514,7 @@ def main():
         with open(progress_log_path, 'a') as f:
             f.write(json.dumps(result) + '\n')
         
-        # Also save results to results.jsonl if available
+        # Save results to results.jsonl if available
         if result['status'] == 'success' and result.get('results'):
             results_jsonl_path = os.path.join(subdirs['logs'], 'results.jsonl')
             with open(results_jsonl_path, 'a') as f:
