@@ -1,21 +1,21 @@
 #!/bin/bash
 
 #=======================================================================
-# TEST SLURM SCRIPT - Validate Dual SHAP Interpretability on Small Datasets
+# TEST SLURM SCRIPT - Validate Dual SHAP + Weight Decay
 #=======================================================================
-# Quick test for dual SHAP interpretability on small datasets
+# Quick test for dual SHAP interpretability + robustness on small datasets
 #=======================================================================
 
 #SBATCH --account=def-arashmoh
-#SBATCH --job-name=T2I_SHAP_TEST
+#SBATCH --job-name=T2I_ROBUST_TEST
 #SBATCH --nodes=1
 #SBATCH --gpus-per-node=1
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=16G
 #SBATCH --time=01:00:00
 
-#SBATCH --output=/project/def-arashmoh/shahab33/Msc/Tab2img/job_logs/test_shap_%j.out
-#SBATCH --error=/project/def-arashmoh/shahab33/Msc/Tab2img/job_logs/test_shap_%j.err
+#SBATCH --output=/project/def-arashmoh/shahab33/Msc/Tab2img/job_logs/test_robust_%j.out
+#SBATCH --error=/project/def-arashmoh/shahab33/Msc/Tab2img/job_logs/test_robust_%j.err
 
 #SBATCH --mail-user=aminhajjr@gmail.com
 #SBATCH --mail-type=END,FAIL
@@ -40,12 +40,13 @@ TEST_DATASETS=(
 # Job Information
 #=======================================================================
 echo "=========================================="
-echo "DUAL SHAP INTERPRETABILITY TEST RUN"
+echo "ROBUSTNESS + INTERPRETABILITY TEST"
 echo "=========================================="
 echo "Job ID: $SLURM_JOB_ID"
 echo "Started: $(date)"
 echo "Node: $(hostname)"
 echo "Testing ${#TEST_DATASETS[@]} datasets"
+echo "Robustness: Weight Decay = 1e-4"
 echo "=========================================="
 echo ""
 
@@ -109,6 +110,11 @@ SUCCESS_COUNT=0
 FAIL_COUNT=0
 TOTAL_TIME=0
 
+# 🆕 Arrays to store results
+declare -a DATASET_NAMES
+declare -a TAB_ACCURACIES
+declare -a IMG_ACCURACIES
+
 echo "=========================================="
 echo "STARTING TEST RUNS"
 echo "=========================================="
@@ -141,8 +147,6 @@ for dataset in "${TEST_DATASETS[@]}"; do
 
     START_TIME=$(date +%s)
 
-    # ✓ CORRECTED: Removed --interpretability_dir (doesn't exist)
-    # Outputs will be saved to: {dataset_name}/dual_shap_interpretability/
     python "$MAIN_SCRIPT" \
         --data "$DATA_FILE" \
         --num_images 5 \
@@ -159,21 +163,39 @@ for dataset in "${TEST_DATASETS[@]}"; do
     if [ $EXIT_CODE -eq 0 ]; then
         echo "✓ SUCCESS in ${ELAPSED}s"
         SUCCESS_COUNT=$((SUCCESS_COUNT + 1))
+        
+        # 🆕 Extract accuracy from log
+        TAB_ACC=$(grep "Best Accuracy" "/tmp/test_${dataset}_${SLURM_JOB_ID}.log" | tail -1 | grep -oP '\d+\.\d+' | head -1)
+        IMG_ACC=$(grep "Test Accuracy - Image" "/tmp/test_${dataset}_${SLURM_JOB_ID}.log" | tail -1 | grep -oP '\d+\.\d+' | head -1)
+        
+        if [ -n "$TAB_ACC" ]; then
+            DATASET_NAMES+=("$dataset")
+            TAB_ACCURACIES+=("$TAB_ACC")
+            IMG_ACCURACIES+=("$IMG_ACC")
+            echo "   📊 Accuracy: Tabular=$TAB_ACC%, Image=$IMG_ACC%"
+        fi
 
         # Check for interpretability outputs
-        # The script creates: {dataset_name}/dual_shap_interpretability/
         INTERP_DIR="$dataset/dual_shap_interpretability"
         
         if [ -d "$INTERP_DIR" ]; then
             echo ""
             echo "Dual SHAP files generated:"
-            ls -lh "$INTERP_DIR" | grep -E "\.(csv|png|txt|npy)$"
-            echo ""
-            echo "File count:"
-            echo "  CSV files: $(find "$INTERP_DIR" -name "*.csv" | wc -l)"
-            echo "  PNG plots: $(find "$INTERP_DIR" -name "*.png" | wc -l)"
-            echo "  NPY arrays: $(find "$INTERP_DIR" -name "*.npy" | wc -l)"
-            echo "  Text reports: $(find "$INTERP_DIR" -name "*.txt" | wc -l)"
+            CSV_COUNT=$(find "$INTERP_DIR" -name "*.csv" | wc -l)
+            PNG_COUNT=$(find "$INTERP_DIR" -name "*.png" | wc -l)
+            NPY_COUNT=$(find "$INTERP_DIR" -name "*.npy" | wc -l)
+            TXT_COUNT=$(find "$INTERP_DIR" -name "*.txt" | wc -l)
+            
+            echo "  CSV files: $CSV_COUNT"
+            echo "  PNG plots: $PNG_COUNT"
+            echo "  NPY arrays: $NPY_COUNT"
+            echo "  Text reports: $TXT_COUNT"
+            
+            if [ $CSV_COUNT -eq 3 ] && [ $PNG_COUNT -eq 3 ] && [ $NPY_COUNT -eq 2 ] && [ $TXT_COUNT -eq 1 ]; then
+                echo "  ✓ All 9 files present"
+            else
+                echo "  ⚠ Expected 9 files (3 CSV, 3 PNG, 2 NPY, 1 TXT)"
+            fi
         else
             echo "⚠ Warning: Interpretability directory not found: $INTERP_DIR"
         fi
@@ -195,13 +217,28 @@ done
 #=======================================================================
 echo ""
 echo "=========================================="
-echo "DUAL SHAP TEST RESULTS SUMMARY"
+echo "TEST RESULTS SUMMARY"
 echo "=========================================="
 echo "Datasets tested: ${#TEST_DATASETS[@]}"
 echo "✓ Success: $SUCCESS_COUNT"
 echo "✗ Failed:  $FAIL_COUNT"
 echo "Total time: ${TOTAL_TIME}s ($(($TOTAL_TIME/60))m)"
 echo ""
+
+# 🆕 Accuracy Summary Table
+if [ ${#DATASET_NAMES[@]} -gt 0 ]; then
+    echo "=========================================="
+    echo "ACCURACY RESULTS (With Weight Decay)"
+    echo "=========================================="
+    printf "%-40s %10s %10s\n" "Dataset" "Tabular" "Image"
+    echo "----------------------------------------"
+    
+    for i in "${!DATASET_NAMES[@]}"; do
+        printf "%-40s %9s%% %9s%%\n" "${DATASET_NAMES[$i]}" "${TAB_ACCURACIES[$i]}" "${IMG_ACCURACIES[$i]}"
+    done
+    echo "=========================================="
+    echo ""
+fi
 
 if [ $SUCCESS_COUNT -gt 0 ]; then
     echo "Interpretability outputs are in:"
@@ -215,6 +252,24 @@ fi
 echo ""
 echo "Finished: $(date)"
 echo "=========================================="
+
+# 🆕 Save results for comparison
+if [ ${#DATASET_NAMES[@]} -gt 0 ]; then
+    RESULTS_FILE="test_results_weight_decay_${SLURM_JOB_ID}.txt"
+    {
+        echo "TEST RESULTS - Weight Decay = 1e-4"
+        echo "Date: $(date)"
+        echo ""
+        printf "%-40s %10s %10s\n" "Dataset" "Tabular" "Image"
+        echo "----------------------------------------"
+        for i in "${!DATASET_NAMES[@]}"; do
+            printf "%-40s %9s%% %9s%%\n" "${DATASET_NAMES[$i]}" "${TAB_ACCURACIES[$i]}" "${IMG_ACCURACIES[$i]}"
+        done
+    } > "$RESULTS_FILE"
+    
+    echo ""
+    echo "Results saved to: $RESULTS_FILE"
+fi
 
 # Exit with failure if any test failed
 if [ $FAIL_COUNT -gt 0 ]; then
