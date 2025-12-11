@@ -600,7 +600,8 @@ if target_col in df.columns:
         original_size = len(df)
         df = df[df[target_col].isin(valid_classes)]
         filtered_size = len(df)
-        print(f"[INFO] Removed {original_size - filtered_size} samples from rare classes")
+        pct_removed = ((original_size - filtered_size) / original_size) * 100
+        print(f"   ⚠️  WARNING: Removed {original_size - filtered_size} samples ({pct_removed:.1f}% of original data)")
         print(f"[INFO] New dataset shape: {df.shape}")
         
         # Show new distribution
