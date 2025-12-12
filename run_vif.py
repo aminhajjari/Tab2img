@@ -87,45 +87,44 @@ def calculate_dual_shap_interpretability(model, test_loader, device, n_features,
     print("\n[3/5] Creating SHAP prediction wrappers...")
     
     def predict_img_from_tab(tab_inputs):
-    """Predict image class from tabular features"""
-    # 🆕 FIX: Set seed for reproducible SHAP interpretability
-    np.random.seed(42)
-    torch.manual_seed(42)
+        """Predict image class from tabular features"""
+        # 🆕 FIX: Set seed for reproducible SHAP interpretability
+        np.random.seed(42)
+        torch.manual_seed(42)
+        
+        tab_inputs_tensor = torch.tensor(tab_inputs, dtype=torch.float32).to(device)
+        batch_size = len(tab_inputs)
     
-    tab_inputs_tensor = torch.tensor(tab_inputs, dtype=torch.float32).to(device)
-    batch_size = len(tab_inputs)
+        with torch.no_grad():
+            # Generate random image input (as per your training)
+            x_rand = torch.rand(batch_size, 28*28).to(device)
+            _, _, img_pred = model(x_rand, tab_inputs_tensor)
+            probs = torch.softmax(img_pred, dim=1)
     
-    with torch.no_grad():
-        # Generate random image input (as per your training)
-        x_rand = torch.rand(batch_size, 28*28).to(device)
-        _, _, img_pred = model(x_rand, tab_inputs_tensor)
-        probs = torch.softmax(img_pred, dim=1)
-    
-    return probs.cpu().numpy()
+        return probs.cpu().numpy()
 
     
     def predict_tab_from_tab(tab_inputs):
-    """Predict tabular class from tabular features"""
-    # 🆕 FIX: Set seed for reproducible SHAP interpretability
-    np.random.seed(42)
-    torch.manual_seed(42)
+        """Predict tabular class from tabular features"""
+        # 🆕 FIX: Set seed for reproducible SHAP interpretability
+        np.random.seed(42)
+        torch.manual_seed(42)
     
-    tab_inputs_tensor = torch.tensor(tab_inputs, dtype=torch.float32).to(device)
-    batch_size = len(tab_inputs)
+        tab_inputs_tensor = torch.tensor(tab_inputs, dtype=torch.float32).to(device)
+        batch_size = len(tab_inputs)
     
-    with torch.no_grad():
-        x_rand = torch.rand(batch_size, 28*28).to(device)
-        _, tab_pred, _ = model(x_rand, tab_inputs_tensor)
-        probs = torch.softmax(tab_pred, dim=1)
+        with torch.no_grad():
+            x_rand = torch.rand(batch_size, 28*28).to(device)
+            _, tab_pred, _ = model(x_rand, tab_inputs_tensor)
+            probs = torch.softmax(tab_pred, dim=1)
     
-    return probs.cpu().numpy()
+        return probs.cpu().numpy()
 
-    
     print("   ✓ Prediction wrappers created")
     # Warn user about computational complexity
     if n_features > 50:
-    print(f"   ⚠️  WARNING: Large feature space detected ({n_features} features).")
-    print(f"   ⚠️  SHAP computation may take 30-60 minutes. Consider reducing n_test if needed.")
+        print(f"   ⚠️  WARNING: Large feature space detected ({n_features} features).")
+        print(f"   ⚠️  SHAP computation may take 30-60 minutes. Consider reducing n_test if needed.")
     
     # ============================================================
     # STEP 4: Calculate SHAP Values (DUAL explanations)
