@@ -28,7 +28,7 @@
 #=======================================================================
 # Configuration (SAME paths as your previous scripts)
 #=======================================================================
-PROJECT_DIR="/project/def-arashmoh/shahab33/Msc"
+PROJECT_DIR="/project/def-arashmoh/shahab33/Msc/Tab2img/Baseline"
 TAB2IMG_DIR="$PROJECT_DIR/Tab2img"
 DATASETS_DIR="$PROJECT_DIR/tabularDataset"
 VENV_PATH="$PROJECT_DIR/venvMsc/bin/activate"
