@@ -1,58 +1,52 @@
 #!/bin/bash
 
 #=======================================================================
-# PRODUCTION SLURM SCRIPT - Baseline Models Comparison (XGBoost/LightGBM/PyTorch MLP)
+# PRODUCTION SLURM SCRIPT - Main Experiment (Main.py)
 #=======================================================================
-# UPDATED for NEW Baseline directory structure
-# For 80 tabular datasets - compares against Table2Image baseline
+# UPDATED to run Main.py directly
+# For 80 tabular datasets - Complete experiment pipeline
 #=======================================================================
 
 #SBATCH --account=def-arashmoh
-#SBATCH --job-name=BASELINE_COMP
+#SBATCH --job-name=MAIN_EXPERIMENT
 #SBATCH --nodes=1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=32G
 #SBATCH --time=48:00:00
 
-#SBATCH --output=/project/def-arashmoh/shahab33/Msc/Tab2img/Baseline/job_logs/baseline_%A.out
-#SBATCH --error=/project/def-arashmoh/shahab33/Msc/Tab2img/Baseline/job_logs/baseline_%A.err
+#SBATCH --output=/project/def-arashmoh/shahab33/Msc/Tab2img/Baseline/job_logs/main_%A.out
+#SBATCH --error=/project/def-arashmoh/shahab33/Msc/Tab2img/Baseline/job_logs/main_%A.err
 
 #SBATCH --mail-user=aminhajjr@gmail.com
 #SBATCH --mail-type=BEGIN,END,FAIL
 
 #=======================================================================
-# ✅ UPDATED Configuration (NEW BASELINE DIRECTORY)
+# ✅ UPDATED Configuration (RUNS MAIN.PY)
 #=======================================================================
 PROJECT_DIR="/project/def-arashmoh/shahab33/Msc"
-BASELINE_DIR="$PROJECT_DIR/Tab2img/Baseline"          # 🆕 NEW BASE DIR
-DATASETS_DIR="$PROJECT_DIR/tabularDataset"            # ✅ SAME
-VENV_PATH="$PROJECT_DIR/venvMsc/bin/activate"         # ✅ SAME
+BASELINE_DIR="$PROJECT_DIR/Tab2img/Baseline"          # Main working directory
+DATASETS_DIR="$PROJECT_DIR/tabularDataset"            # Datasets location
+VENV_PATH="$PROJECT_DIR/venvMsc/bin/activate"         # Virtual environment
 
-# Baseline scripts (in Baseline directory)
-BASELINE_SCRIPT="$BASELINE_DIR/baseline_comparison.py"
-BATCH_SCRIPT="$BASELINE_DIR/run_baseline_batch.py"
+# Main script (THIS IS WHAT RUNS)
+MAIN_SCRIPT="$BASELINE_DIR/Main.py"
 
-# Output directories (INSIDE Baseline folder)
+# Output directories
 RESULTS_BASE="$BASELINE_DIR/results"
 JOB_LOGS_DIR="$BASELINE_DIR/job_logs"
 
-# Timeout configuration
-TIMEOUT_DEFAULT=7200  # 2 hours per dataset (faster than Table2Image)
-
 #=======================================================================
-# Job Information (UPDATED PATHS)
+# Job Information
 #=======================================================================
 echo "=========================================="
-echo "BASELINE MODELS COMPARISON - 80 DATASETS"
+echo "MAIN EXPERIMENT - Running Main.py"
 echo "=========================================="
 echo "📁 Working in: $BASELINE_DIR"
-echo "📁 Datasets:  $DATASETS_DIR"
-echo "XGBoost | LightGBM | PyTorch MLP"
+echo "📁 Main script: $MAIN_SCRIPT"
+echo "📁 Datasets: $DATASETS_DIR"
 echo "Job ID: $SLURM_JOB_ID | Started: $(date)"
 echo "Configuration:"
-echo "  - Models: XGBoost, LightGBM, PyTorch MLP"
-echo "  - Hyperparameter tuning: Enabled"
-echo "  - Timeout: 2 hours per dataset"
+echo "  - Script: Main.py (complete pipeline)"
 echo "  - CPUs: 8 cores | Memory: 32GB"
 echo "=========================================="
 echo ""
@@ -61,12 +55,12 @@ echo ""
 # CPU/GPU Information
 #=======================================================================
 echo "System Information:"
-nvidia-smi --query-gpu=name,memory.total,driver_version --format=csv,noheader || echo "No GPU detected (CPU-only fine for baselines)"
+nvidia-smi --query-gpu=name,memory.total,driver_version --format=csv,noheader || echo "No GPU detected"
 echo "CPU cores: $(nproc)"
 echo ""
 
 #=======================================================================
-# Setup
+# Setup Directories
 #=======================================================================
 echo "Creating directories..."
 mkdir -p "$JOB_LOGS_DIR"
@@ -75,7 +69,7 @@ echo "✅ Directories ready"
 echo ""
 
 #=======================================================================
-# Verify Files & Datasets (UPDATED PATHS)
+# Verify Main Script & Datasets
 #=======================================================================
 echo "Verifying environment..."
 
@@ -84,24 +78,19 @@ if [ ! -d "$DATASETS_DIR" ]; then
     exit 1
 fi
 
-if [ ! -f "$BASELINE_SCRIPT" ]; then
-    echo "❌ ERROR: Baseline script not found: $BASELINE_SCRIPT"
-    echo "💡 Save your Python code as: $BASELINE_SCRIPT"
-    exit 1
-fi
-
-if [ ! -f "$BATCH_SCRIPT" ]; then
-    echo "❌ ERROR: Batch script not found: $BATCH_SCRIPT"
-    echo "💡 Create run_baseline_batch.py in: $BASELINE_DIR/"
+if [ ! -f "$MAIN_SCRIPT" ]; then
+    echo "❌ ERROR: Main.py not found: $MAIN_SCRIPT"
+    echo "💡 Save your main script as: $MAIN_SCRIPT"
     exit 1
 fi
 
 DATASET_COUNT=$(find "$DATASETS_DIR" -mindepth 1 -maxdepth 1 -type d | wc -l)
 echo "✅ Found $DATASET_COUNT dataset folders"
+echo "✅ Main.py verified: $(ls -lh $MAIN_SCRIPT)"
 echo ""
 
 #=======================================================================
-# Load Environment (SAME as Table2Image)
+# Load Environment
 #=======================================================================
 echo "Loading modules..."
 module purge
@@ -127,6 +116,7 @@ print(f'XGBoost: {xgboost.__version__}')
 print(f'LightGBM: {lightgbm.__version__}')
 print(f'PyTorch: {torch.__version__}')
 print(f'CUDA available: {torch.cuda.is_available()}')
+print('✅ Main.py dependencies OK')
 "
 
 if [ $? -ne 0 ]; then
@@ -138,85 +128,71 @@ echo "✅ Environment ready"
 echo ""
 
 #=======================================================================
-# Execute Batch Processing (UPDATED PATHS)
+# Execute Main.py (PRIMARY EXECUTION)
 #=======================================================================
 echo "=========================================="
-echo "🚀 STARTING BASELINE COMPARISON"
+echo "🚀 STARTING MAIN EXPERIMENT"
 echo "=========================================="
-echo "📁 Scripts: $BASELINE_DIR/"
-echo "📁 Output:  $RESULTS_BASE/"
-echo "Command:"
-echo "python $BATCH_SCRIPT \\"
+echo "📁 Main script: $MAIN_SCRIPT"
+echo "📁 Datasets: $DATASETS_DIR"
+echo "📁 Output: $RESULTS_BASE"
+echo "📁 Logs: $JOB_LOGS_DIR"
+echo ""
+echo "Running command:"
+echo "python $MAIN_SCRIPT \\"
 echo "  --datasets_dir $DATASETS_DIR \\"
 echo "  --output_base $RESULTS_BASE \\"
-echo "  --job_id $SLURM_JOB_ID \\"
-echo "  --script_path $BASELINE_SCRIPT \\"
-echo "  --timeout $TIMEOUT_DEFAULT \\"
-echo "  --skip_tuning False"
+echo "  --job_id $SLURM_JOB_ID"
 echo ""
 echo "=========================================="
 echo ""
 
-# Run batch processor
-python "$BATCH_SCRIPT" \
+# Run Main.py with standard arguments
+cd "$BASELINE_DIR"
+python "$MAIN_SCRIPT" \
     --datasets_dir "$DATASETS_DIR" \
     --output_base "$RESULTS_BASE" \
-    --job_id "$SLURM_JOB_ID" \
-    --script_path "$BASELINE_SCRIPT" \
-    --timeout "$TIMEOUT_DEFAULT" \
-    --skip_tuning False  # Enable tuning for best results
+    --job_id "$SLURM_JOB_ID"
 
 EXIT_CODE=$?
 
 #=======================================================================
-# Final Summary (UPDATED PATHS)
+# Final Summary
 #=======================================================================
 echo ""
 echo "=========================================="
-echo "BASELINE COMPARISON COMPLETE"
+echo "MAIN EXPERIMENT COMPLETE"
 echo "=========================================="
 echo "Finished: $(date)"
 echo "Exit code: $EXIT_CODE"
 echo ""
 
 if [ $EXIT_CODE -eq 0 ]; then
-    # Find result directory
-    RESULT_DIR=$(find "$RESULTS_BASE" -maxdepth 1 -type d -name "*_JOB${SLURM_JOB_ID}" | head -1)
-    
-    echo "✅ SUCCESS! All baselines completed"
+    echo "✅ SUCCESS! Main.py completed successfully"
     echo ""
     echo "📂 Results location:"
-    echo "    $RESULT_DIR/"
+    echo "    $RESULTS_BASE/"
     echo ""
-    echo "📊 Directory structure:"
-    echo "    Baseline/"
-    echo "    ├── results/baseline_JOBXXXX/"
-    echo "    │   ├── balance-scale/baseline_comparison.csv"
-    echo "    │   ├── balance-scale/baseline_comparison.png"
-    echo "    │   └── ... (80 datasets)"
-    echo "    ├── table2image_results/   (T2I original)"
-    echo "    ├── t2i_vif_results/       (VIF T2I)"
-    echo "    └── job_logs/"
+    echo "📊 Expected outputs (depends on Main.py):"
+    echo "    ├── summary_all_baselines.csv"
+    echo "    ├── comparison_table.png"
+    echo "    ├── experiment_results.json"
+    echo "    └── dataset-wise results/"
     echo ""
     
-    # Count completed datasets
-    COMPLETED=$(find "$RESULT_DIR" -name "baseline_comparison.csv" 2>/dev/null | wc -l)
-    echo "✅ $COMPLETED/80 datasets completed"
+    # Show recent results
+    echo "📁 Latest results:"
+    ls -la "$RESULTS_BASE" | tail -10
     echo ""
     
-    # Show top performers if summary exists
-    if [ -f "$RESULT_DIR/summary_all_baselines.csv" ]; then
-        echo "🏆 Top 5 datasets by XGBoost accuracy:"
-        head -6 "$RESULT_DIR/summary_all_baselines.csv"
-        echo ""
-    fi
-    
-    echo "🎉 Baselines ready for Table2Image comparison!"
-    echo "📈 Compare with: table2image_results/ | t2i_vif_results/"
+    echo "🎉 Main experiment pipeline complete!"
+    echo "📈 Ready for analysis and visualization"
     
 else
-    echo "⚠️  Some datasets may have failed"
-    echo "Check: $JOB_LOGS_DIR/baseline_${SLURM_JOB_ID}.err"
+    echo "⚠️  Main.py failed with exit code $EXIT_CODE"
+    echo "Check logs:"
+    echo "    $JOB_LOGS_DIR/main_${SLURM_JOB_ID}.out"
+    echo "    $JOB_LOGS_DIR/main_${SLURM_JOB_ID}.err"
 fi
 
 echo "=========================================="
