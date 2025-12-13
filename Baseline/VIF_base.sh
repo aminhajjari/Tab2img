@@ -1,61 +1,54 @@
 #!/bin/bash
 
 #=======================================================================
-# PRODUCTION SLURM SCRIPT - Table2Image VIF (Variance Inflation Factor)
+# PRODUCTION SLURM SCRIPT - VIF_base Experiment (VIF_base.py)
 #=======================================================================
-# UPDATED for NEW Baseline directory structure
-# For 80 tabular datasets - VIF-Enhanced Table2Image
+# UPDATED to run VIF_base.py directly
+# For 80 tabular datasets - VIF-Enhanced pipeline
 #=======================================================================
 
 #SBATCH --account=def-arashmoh
-#SBATCH --job-name=T2I_VIF_ENHANCED
+#SBATCH --job-name=VIF_BASE
 #SBATCH --nodes=1
 #SBATCH --gpus-per-node=a100:1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=64G
 #SBATCH --time=96:00:00
 
-#SBATCH --output=/project/def-arashmoh/shahab33/Msc/Tab2img/Baseline/job_logs/t2i_vif_%A.out
-#SBATCH --error=/project/def-arashmoh/shahab33/Msc/Tab2img/Baseline/job_logs/t2i_vif_%A.err
+#SBATCH --output=/project/def-arashmoh/shahab33/Msc/Tab2img/Baseline/job_logs/vif_base_%A.out
+#SBATCH --error=/project/def-arashmoh/shahab33/Msc/Tab2img/Baseline/job_logs/vif_base_%A.err
 
 #SBATCH --mail-user=aminhajjr@gmail.com
 #SBATCH --mail-type=BEGIN,END,FAIL
 
 #=======================================================================
-# ✅ UPDATED Configuration (NEW BASELINE DIRECTORY)
+# ✅ UPDATED Configuration (RUNS VIF_base.PY)
 #=======================================================================
 PROJECT_DIR="/project/def-arashmoh/shahab33/Msc"
-BASELINE_DIR="$PROJECT_DIR/Tab2img/Baseline"          # 🆕 NEW BASE DIR
-DATASETS_DIR="$PROJECT_DIR/tabularDataset"            # ✅ SAME
-VENV_PATH="$PROJECT_DIR/venvMsc/bin/activate"         # ✅ SAME
+BASELINE_DIR="$PROJECT_DIR/Tab2img/Baseline"          # Main working directory
+DATASETS_DIR="$PROJECT_DIR/tabularDataset"            # Datasets location
+VENV_PATH="$PROJECT_DIR/venvMsc/bin/activate"         # Virtual environment
 
-# VIF-Enhanced Table2Image scripts (in Baseline directory)
-VIF_SCRIPT="$BASELINE_DIR/table2image_vif.py"
-BATCH_SCRIPT="$BASELINE_DIR/run_t2i_vif_batch.py"
+# VIF_base script (THIS IS WHAT RUNS)
+VIF_BASE_SCRIPT="$BASELINE_DIR/VIF_base.py"
 
-# Output directories (INSIDE Baseline folder)
+# Output directories
 RESULTS_BASE="$BASELINE_DIR/t2i_vif_results"
 JOB_LOGS_DIR="$BASELINE_DIR/job_logs"
 
-# Timeout: 4.5 hours (VIF computation adds overhead)
-TIMEOUT_DEFAULT=16200
-
 #=======================================================================
-# Job Information (UPDATED PATHS)
+# Job Information
 #=======================================================================
 echo "=========================================="
-echo "TABLE2IMAGE VIF-ENHANCED - 80 DATASETS"
+echo "VIF_BASE EXPERIMENT - Running VIF_base.py"
 echo "=========================================="
 echo "📁 Working in: $BASELINE_DIR"
-echo "📁 Datasets:  $DATASETS_DIR"
-echo "CVAE + VIF Embeddings + Tabular + FashionMNIST/MNIST"
+echo "📁 VIF script: $VIF_BASE_SCRIPT"
+echo "📁 Datasets: $DATASETS_DIR"
 echo "Job ID: $SLURM_JOB_ID | Started: $(date)"
 echo "Configuration:"
-echo "  - Model: CVAEWithTabEmbedding + VIFInitialization"
-echo "  - VIF: Multicollinearity-aware weight init"
-echo "  - Images: FashionMNIST (0-9) + MNIST (10-19)"
-echo "  - Optimizer: AdamW (lr=0.001, wd=1e-4)"
-echo "  - Timeout: 4.5h/dataset | GPU: A100"
+echo "  - Script: VIF_base.py (VIF-enhanced pipeline)"
+echo "  - GPU: A100 | CPUs: 8 cores | Memory: 64GB"
 echo "=========================================="
 echo ""
 
@@ -76,7 +69,7 @@ echo "✅ Directories ready"
 echo ""
 
 #=======================================================================
-# Verify Files & Datasets (UPDATED PATHS)
+# Verify VIF_base Script & Datasets
 #=======================================================================
 echo "Verifying environment..."
 
@@ -85,24 +78,19 @@ if [ ! -d "$DATASETS_DIR" ]; then
     exit 1
 fi
 
-if [ ! -f "$VIF_SCRIPT" ]; then
-    echo "❌ ERROR: VIF Table2Image script not found: $VIF_SCRIPT"
-    echo "💡 Save your Python code as: $VIF_SCRIPT"
-    exit 1
-fi
-
-if [ ! -f "$BATCH_SCRIPT" ]; then
-    echo "❌ ERROR: Batch script not found: $BATCH_SCRIPT"
-    echo "💡 Create run_t2i_vif_batch.py in: $BASELINE_DIR/"
+if [ ! -f "$VIF_BASE_SCRIPT" ]; then
+    echo "❌ ERROR: VIF_base.py not found: $VIF_BASE_SCRIPT"
+    echo "💡 Save your VIF script as: $VIF_BASE_SCRIPT"
     exit 1
 fi
 
 DATASET_COUNT=$(find "$DATASETS_DIR" -mindepth 1 -maxdepth 1 -type d | wc -l)
 echo "✅ Found $DATASET_COUNT dataset folders"
+echo "✅ VIF_base.py verified: $(ls -lh $VIF_BASE_SCRIPT)"
 echo ""
 
 #=======================================================================
-# Load Environment (UNCHANGED)
+# Load Environment (VIF + GPU)
 #=======================================================================
 echo "Loading modules..."
 module purge
@@ -128,102 +116,84 @@ print(f'Sklearn: {sklearn.__version__}')
 print(f'CUDA: {torch.cuda.is_available()}')
 if torch.cuda.is_available():
     print(f'GPU: {torch.cuda.get_device_name(0)}')
-print('✅ VIF-Table2Image dependencies OK')
+print('✅ VIF_base.py dependencies OK')
 "
 
 if [ $? -ne 0 ]; then
-    echo "❌ ERROR: Environment check failed!"
+    echo "❌ ERROR: Required packages missing!"
     exit 1
 fi
 
-echo "✅ Environment ready (VIF computation enabled)"
+echo "✅ Environment ready (VIF computation + GPU enabled)"
 echo ""
 
 #=======================================================================
-# Execute Batch Processing (UPDATED PATHS)
+# Execute VIF_base.py (PRIMARY EXECUTION)
 #=======================================================================
 echo "=========================================="
-echo "🚀 STARTING TABLE2IMAGE-VIF BATCH"
+echo "🚀 STARTING VIF_BASE EXPERIMENT"
 echo "=========================================="
-echo "📁 Scripts: $BASELINE_DIR/"
-echo "📁 Output:  $RESULTS_BASE/"
-echo "VIF-Enhanced features:"
-echo "  ✅ Variance Inflation Factor embeddings"
-echo "  ✅ Inverse-VIF weight initialization"
-echo "  ✅ Tabular + VIF + Image supervision"
-echo "  ✅ Model checkpointing per epoch"
+echo "📁 VIF script: $VIF_BASE_SCRIPT"
+echo "📁 Datasets: $DATASETS_DIR"
+echo "📁 Output: $RESULTS_BASE"
+echo "📁 Logs: $JOB_LOGS_DIR"
 echo ""
-echo "Command:"
-echo "python $BATCH_SCRIPT \\"
+echo "Running command:"
+echo "python $VIF_BASE_SCRIPT \\"
 echo "  --datasets_dir $DATASETS_DIR \\"
 echo "  --output_base $RESULTS_BASE \\"
-echo "  --job_id $SLURM_JOB_ID \\"
-echo "  --script_path $VIF_SCRIPT \\"
-echo "  --timeout $TIMEOUT_DEFAULT"
+echo "  --job_id $SLURM_JOB_ID"
 echo ""
 echo "=========================================="
 echo ""
 
-python "$BATCH_SCRIPT" \
+# Run VIF_base.py with standard arguments
+cd "$BASELINE_DIR"
+python "$VIF_BASE_SCRIPT" \
     --datasets_dir "$DATASETS_DIR" \
     --output_base "$RESULTS_BASE" \
-    --job_id "$SLURM_JOB_ID" \
-    --script_path "$VIF_SCRIPT" \
-    --timeout "$TIMEOUT_DEFAULT"
+    --job_id "$SLURM_JOB_ID"
 
 EXIT_CODE=$?
 
 #=======================================================================
-# Final Summary (UPDATED PATHS)
+# Final Summary
 #=======================================================================
 echo ""
 echo "=========================================="
-echo "TABLE2IMAGE-VIF PRODUCTION COMPLETE"
+echo "VIF_BASE EXPERIMENT COMPLETE"
 echo "=========================================="
 echo "Finished: $(date)"
 echo "Exit code: $EXIT_CODE"
 echo ""
 
 if [ $EXIT_CODE -eq 0 ]; then
-    RESULT_DIR=$(find "$RESULTS_BASE" -maxdepth 1 -type d -name "*_JOB${SLURM_JOB_ID}" | head -1)
-    
-    echo "✅ SUCCESS! VIF-Table2Image completed"
+    echo "✅ SUCCESS! VIF_base.py completed successfully"
     echo ""
     echo "📂 Results location:"
-    echo "    $RESULT_DIR/"
+    echo "    $RESULTS_BASE/"
     echo ""
-    echo "📊 Directory structure:"
-    echo "    Baseline/"
-    echo "    ├── t2i_vif_results/vif_JOBXXXX/"
-    echo "    │   ├── balance-scale.pt"
+    echo "📊 Expected VIF outputs:"
+    echo "    ├── vif_JOBXXXX/"
+    echo "    │   ├── balance-scale.pt (trained model)"
     echo "    │   ├── balance-scale/vif_summary.json"
     echo "    │   ├── summary_vif_results.csv"
     echo "    │   └── ... (80 datasets)"
-    echo "    ├── table2image_results/  (original T2I)"
-    echo "    ├── results/             (baselines)"
-    echo "    └── job_logs/"
     echo ""
     
-    # Count completed models
-    COMPLETED=$(find "$RESULT_DIR" -name "*.pt" 2>/dev/null | wc -l)
-    echo "✅ $COMPLETED/80 VIF models trained"
+    # Show recent results
+    echo "📁 Latest VIF results:"
+    ls -la "$RESULTS_BASE" | tail -10
     echo ""
     
-    if [ -f "$RESULT_DIR/summary_vif_results.csv" ]; then
-        echo "🏆 Top 5 VIF-Table2Image performances:"
-        echo "Dataset        | Acc(%) | AUC    | VIF_Mean"
-        head -6 "$RESULT_DIR/summary_vif_results.csv"
-        echo ""
-    fi
-    
-    echo "🎉 VIF-enhanced Table2Image ready for comparison!"
-    echo "📈 Compare with: results/ | table2image_results/"
+    echo "🎉 VIF-enhanced experiment complete!"
+    echo "📈 Ready for comparison with baselines & original T2I"
     
 else
-    echo "⚠️  Some datasets may have failed (VIF computation intensive)"
+    echo "⚠️  VIF_base.py failed with exit code $EXIT_CODE"
     echo "Check logs:"
-    echo "    $JOB_LOGS_DIR/t2i_vif_${SLURM_JOB_ID}.out"
-    echo "    $JOB_LOGS_DIR/t2i_vif_${SLURM_JOB_ID}.err"
+    echo "    $JOB_LOGS_DIR/vif_base_${SLURM_JOB_ID}.out"
+    echo "    $JOB_LOGS_DIR/vif_base_${SLURM_JOB_ID}.err"
 fi
 
 echo "=========================================="
