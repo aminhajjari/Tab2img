@@ -41,7 +41,7 @@ RESULTS_BASE="$TAB2IMG_DIR/results"
 JOB_LOGS_DIR="$TAB2IMG_DIR/job_logs"
 
 # Timeout configuration (based on your experience)
-TIMEOUT_DEFAULT=14400  # 2 hours (safe for most datasets)
+TIMEOUT_DEFAULT=14400  # 4 hours (safe for most datasets)
 
 #=======================================================================
 # Job Information
