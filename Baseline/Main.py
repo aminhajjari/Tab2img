@@ -10,6 +10,7 @@ import warnings
 import argparse
 import os
 import json
+import sys
 from datetime import datetime
 import scipy.io.arff as arff
 
@@ -25,8 +26,10 @@ warnings.filterwarnings('ignore')
 
 # ========== ARGUMENT PARSER ==========
 parser = argparse.ArgumentParser(description="Baseline Models Comparison for Table2Image")
-parser.add_argument('--data', type=str, required=True, 
+parser.add_argument('--data', type=str, 
                    help='Path to the dataset (csv/arff/data)')
+parser.add_argument('--data_dir', type=str,
+                   help='Directory containing multiple datasets to process')
 parser.add_argument('--output_dir', type=str, default='baseline_results',
                    help='Directory to save comparison results')
 parser.add_argument('--skip_tuning', action='store_true',
@@ -34,6 +37,11 @@ parser.add_argument('--skip_tuning', action='store_true',
 parser.add_argument('--random_state', type=int, default=42,
                    help='Random state for reproducibility')
 args = parser.parse_args()
+
+# Check that at least one data source is provided
+if not args.data and not args.data_dir:
+    parser.error("Either --data or --data_dir must be provided")
+    sys.exit(1)
 
 # ========== PARAMETERS ==========
 RANDOM_STATE = args.random_state
@@ -105,8 +113,10 @@ def load_dataset(file_path):
 def preprocess_data(data_path):
     """Preprocess dataset similar to Table2Image preprocessing"""
     
-    file_name = os.path.basename(os.path.dirname(data_path))
+    file_name = os.path.splitext(os.path.basename(data_path))[0]
     file_ext = os.path.splitext(data_path)[1].lower()
+    
+    print(f"\n[INFO] Processing dataset: {file_name}")
     
     # Load dataset
     if file_ext == '.arff':
@@ -480,128 +490,182 @@ def train_lightgbm(X_train, y_train, X_test, y_test, num_classes, skip_tuning=Fa
         'probabilities': y_pred_proba
     }
 
-# ========== MAIN COMPARISON ==========
+# ========== SINGLE DATASET PROCESSING ==========
+def process_single_dataset(data_path):
+    """Process a single dataset"""
+    try:
+        # Load and preprocess data
+        X, y, num_classes, dataset_name = preprocess_data(data_path)
+        
+        # Train-test split
+        X_train, X_test, y_train, y_test = train_test_split(
+            X, y, test_size=0.2, random_state=RANDOM_STATE, stratify=y
+        )
+        
+        # Standardize features
+        scaler = StandardScaler()
+        X_train_scaled = scaler.fit_transform(X_train)
+        X_test_scaled = scaler.transform(X_test)
+        
+        print(f"\n{'='*70}")
+        print("TRAINING BASELINE MODELS")
+        print(f"{'='*70}")
+        
+        # Train all models
+        results = {}
+        
+        # 1. XGBoost
+        results['xgboost'] = train_xgboost(
+            X_train_scaled, y_train, X_test_scaled, y_test, 
+            num_classes, args.skip_tuning
+        )
+        
+        # 2. LightGBM
+        results['lightgbm'] = train_lightgbm(
+            X_train_scaled, y_train, X_test_scaled, y_test, 
+            num_classes, args.skip_tuning
+        )
+        
+        # 3. PyTorch MLP
+        results['pytorch_mlp'] = train_pytorch_mlp(
+            X_train_scaled, y_train, X_test_scaled, y_test, 
+            num_classes
+        )
+        
+        # ========== CREATE COMPARISON TABLE ==========
+        print(f"\n{'='*70}")
+        print("RESULTS SUMMARY")
+        print(f"{'='*70}")
+        
+        comparison_df = pd.DataFrame({
+            'Model': [r['model'] for r in results.values()],
+            'Accuracy (%)': [r['accuracy'] for r in results.values()],
+            'AUC': [r['auc'] for r in results.values()]
+        })
+        
+        print(comparison_df.to_string(index=False))
+        
+        # Save results
+        dataset_dir = os.path.join(OUTPUT_DIR, dataset_name)
+        os.makedirs(dataset_dir, exist_ok=True)
+        
+        # Save CSV
+        csv_path = os.path.join(dataset_dir, 'baseline_comparison.csv')
+        comparison_df.to_csv(csv_path, index=False)
+        print(f"\n[INFO] Results saved to: {csv_path}")
+        
+        # Save detailed JSON
+        detailed_results = {
+            'dataset': dataset_name,
+            'num_samples': len(X),
+            'num_features': X.shape[1],
+            'num_classes': num_classes,
+            'train_samples': len(X_train),
+            'test_samples': len(X_test),
+            'models': {k: {
+                'model': v['model'],
+                'accuracy': float(v['accuracy']),
+                'auc': float(v['auc'])
+            } for k, v in results.items()},
+            'timestamp': datetime.now().isoformat()
+        }
+        
+        json_path = os.path.join(dataset_dir, 'baseline_results.json')
+        with open(json_path, 'w') as f:
+            json.dump(detailed_results, f, indent=2)
+        
+        # ========== CREATE VISUALIZATION ==========
+        fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+        
+        # Accuracy comparison
+        axes[0].bar(comparison_df['Model'], comparison_df['Accuracy (%)'], 
+                    color=['#3498db', '#e74c3c', '#2ecc71'])
+        axes[0].set_ylabel('Accuracy (%)', fontsize=12, fontweight='bold')
+        axes[0].set_title('Model Accuracy Comparison', fontsize=14, fontweight='bold')
+        axes[0].set_ylim([0, 105])
+        axes[0].grid(axis='y', alpha=0.3)
+        for i, v in enumerate(comparison_df['Accuracy (%)']):
+            axes[0].text(i, v + 2, f'{v:.2f}%', ha='center', fontweight='bold')
+        
+        # AUC comparison
+        axes[1].bar(comparison_df['Model'], comparison_df['AUC'], 
+                    color=['#3498db', '#e74c3c', '#2ecc71'])
+        axes[1].set_ylabel('AUC', fontsize=12, fontweight='bold')
+        axes[1].set_title('Model AUC Comparison', fontsize=14, fontweight='bold')
+        axes[1].set_ylim([0, 1.1])
+        axes[1].grid(axis='y', alpha=0.3)
+        for i, v in enumerate(comparison_df['AUC']):
+            axes[1].text(i, v + 0.03, f'{v:.4f}', ha='center', fontweight='bold')
+        
+        plt.suptitle(f'Baseline Models Comparison - {dataset_name}', 
+                     fontsize=16, fontweight='bold')
+        plt.tight_layout()
+        
+        plot_path = os.path.join(dataset_dir, 'baseline_comparison.png')
+        plt.savefig(plot_path, dpi=150, bbox_inches='tight')
+        plt.close()
+        print(f"[INFO] Visualization saved to: {plot_path}")
+        
+        # Print JSON for batch processing
+        print("\n" + "="*70)
+        print("RESULTS_JSON_START")
+        print(json.dumps(detailed_results))
+        print("RESULTS_JSON_END")
+        print("="*70 + "\n")
+        
+        print(f"✅ Baseline comparison completed successfully for {dataset_name}!")
+        return True
+        
+    except Exception as e:
+        print(f"\n❌ ERROR processing dataset: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+# ========== MAIN ==========
 def main():
-    # Load and preprocess data
-    X, y, num_classes, dataset_name = preprocess_data(args.data)
+    """Main entry point"""
+    success_count = 0
+    fail_count = 0
     
-    # Train-test split
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.2, random_state=RANDOM_STATE, stratify=y
-    )
+    if args.data:
+        # Process single dataset
+        if process_single_dataset(args.data):
+            success_count += 1
+        else:
+            fail_count += 1
     
-    # Standardize features
-    scaler = StandardScaler()
-    X_train_scaled = scaler.fit_transform(X_train)
-    X_test_scaled = scaler.transform(X_test)
+    elif args.data_dir:
+        # Process multiple datasets
+        print(f"\n[INFO] Processing all datasets in: {args.data_dir}")
+        
+        # Find all dataset files
+        dataset_files = []
+        for root, dirs, files in os.walk(args.data_dir):
+            for file in files:
+                if file.endswith(('.csv', '.arff', '.data')):
+                    dataset_files.append(os.path.join(root, file))
+        
+        print(f"[INFO] Found {len(dataset_files)} datasets to process")
+        
+        for i, data_path in enumerate(dataset_files, 1):
+            print(f"\n{'#'*70}")
+            print(f"PROCESSING DATASET {i}/{len(dataset_files)}: {os.path.basename(data_path)}")
+            print(f"{'#'*70}")
+            
+            if process_single_dataset(data_path):
+                success_count += 1
+            else:
+                fail_count += 1
     
+    # Final summary
     print(f"\n{'='*70}")
-    print("TRAINING BASELINE MODELS")
+    print("BATCH PROCESSING COMPLETE")
     print(f"{'='*70}")
-    
-    # Train all models
-    results = {}
-    
-    # 1. XGBoost
-    results['xgboost'] = train_xgboost(
-        X_train_scaled, y_train, X_test_scaled, y_test, 
-        num_classes, args.skip_tuning
-    )
-    
-    # 2. LightGBM
-    results['lightgbm'] = train_lightgbm(
-        X_train_scaled, y_train, X_test_scaled, y_test, 
-        num_classes, args.skip_tuning
-    )
-    
-    # 3. PyTorch MLP
-    results['pytorch_mlp'] = train_pytorch_mlp(
-        X_train_scaled, y_train, X_test_scaled, y_test, 
-        num_classes
-    )
-    
-    # ========== CREATE COMPARISON TABLE ==========
-    print(f"\n{'='*70}")
-    print("RESULTS SUMMARY")
-    print(f"{'='*70}")
-    
-    comparison_df = pd.DataFrame({
-        'Model': [r['model'] for r in results.values()],
-        'Accuracy (%)': [r['accuracy'] for r in results.values()],
-        'AUC': [r['auc'] for r in results.values()]
-    })
-    
-    print(comparison_df.to_string(index=False))
-    
-    # Save results
-    dataset_dir = os.path.join(OUTPUT_DIR, dataset_name)
-    os.makedirs(dataset_dir, exist_ok=True)
-    
-    # Save CSV
-    csv_path = os.path.join(dataset_dir, 'baseline_comparison.csv')
-    comparison_df.to_csv(csv_path, index=False)
-    print(f"\n[INFO] Results saved to: {csv_path}")
-    
-    # Save detailed JSON
-    detailed_results = {
-        'dataset': dataset_name,
-        'num_samples': len(X),
-        'num_features': X.shape[1],
-        'num_classes': num_classes,
-        'train_samples': len(X_train),
-        'test_samples': len(X_test),
-        'models': {k: {
-            'model': v['model'],
-            'accuracy': float(v['accuracy']),
-            'auc': float(v['auc'])
-        } for k, v in results.items()},
-        'timestamp': datetime.now().isoformat()
-    }
-    
-    json_path = os.path.join(dataset_dir, 'baseline_results.json')
-    with open(json_path, 'w') as f:
-        json.dump(detailed_results, f, indent=2)
-    
-    # ========== CREATE VISUALIZATION ==========
-    fig, axes = plt.subplots(1, 2, figsize=(14, 5))
-    
-    # Accuracy comparison
-    axes[0].bar(comparison_df['Model'], comparison_df['Accuracy (%)'], 
-                color=['#3498db', '#e74c3c', '#2ecc71'])
-    axes[0].set_ylabel('Accuracy (%)', fontsize=12, fontweight='bold')
-    axes[0].set_title('Model Accuracy Comparison', fontsize=14, fontweight='bold')
-    axes[0].set_ylim([0, 105])
-    axes[0].grid(axis='y', alpha=0.3)
-    for i, v in enumerate(comparison_df['Accuracy (%)']):
-        axes[0].text(i, v + 2, f'{v:.2f}%', ha='center', fontweight='bold')
-    
-    # AUC comparison
-    axes[1].bar(comparison_df['Model'], comparison_df['AUC'], 
-                color=['#3498db', '#e74c3c', '#2ecc71'])
-    axes[1].set_ylabel('AUC', fontsize=12, fontweight='bold')
-    axes[1].set_title('Model AUC Comparison', fontsize=14, fontweight='bold')
-    axes[1].set_ylim([0, 1.1])
-    axes[1].grid(axis='y', alpha=0.3)
-    for i, v in enumerate(comparison_df['AUC']):
-        axes[1].text(i, v + 0.03, f'{v:.4f}', ha='center', fontweight='bold')
-    
-    plt.suptitle(f'Baseline Models Comparison - {dataset_name}', 
-                 fontsize=16, fontweight='bold')
-    plt.tight_layout()
-    
-    plot_path = os.path.join(dataset_dir, 'baseline_comparison.png')
-    plt.savefig(plot_path, dpi=150, bbox_inches='tight')
-    plt.close()
-    print(f"[INFO] Visualization saved to: {plot_path}")
-    
-    # Print JSON for batch processing
-    print("\n" + "="*70)
-    print("RESULTS_JSON_START")
-    print(json.dumps(detailed_results))
-    print("RESULTS_JSON_END")
-    print("="*70 + "\n")
-    
-    print(f"✅ Baseline comparison completed successfully!")
+    print(f"✅ Successful: {success_count}")
+    print(f"❌ Failed: {fail_count}")
+    print(f"Total: {success_count + fail_count}")
+    print(f"{'='*70}\n")
 
 if __name__ == '__main__':
     main()
