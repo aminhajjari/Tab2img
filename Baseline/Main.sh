@@ -3,12 +3,8 @@
 #=======================================================================
 # PRODUCTION SLURM SCRIPT - Baseline Models Comparison (XGBoost/LightGBM/PyTorch MLP)
 #=======================================================================
+# UPDATED for NEW Baseline directory structure
 # For 80 tabular datasets - compares against Table2Image baseline
-# Enhanced with:
-# - Hyperparameter tuning (optional --skip_tuning flag)
-# - Model comparison visualizations
-# - CSV/JSON outputs per dataset
-# - Adaptive resource allocation
 #=======================================================================
 
 #SBATCH --account=def-arashmoh
@@ -18,48 +14,46 @@
 #SBATCH --mem=32G
 #SBATCH --time=48:00:00
 
-#SBATCH --output=/project/def-arashmoh/shahab33/Msc/Tab2img/job_logs/baseline_%A.out
-#SBATCH --error=/project/def-arashmoh/shahab33/Msc/Tab2img/job_logs/baseline_%A.err
+#SBATCH --output=/project/def-arashmoh/shahab33/Msc/Tab2img/Baseline/job_logs/baseline_%A.out
+#SBATCH --error=/project/def-arashmoh/shahab33/Msc/Tab2img/Baseline/job_logs/baseline_%A.err
 
 #SBATCH --mail-user=aminhajjr@gmail.com
 #SBATCH --mail-type=BEGIN,END,FAIL
 
 #=======================================================================
-# Configuration (SAME as your Table2Image script)
+# ✅ UPDATED Configuration (NEW BASELINE DIRECTORY)
 #=======================================================================
 PROJECT_DIR="/project/def-arashmoh/shahab33/Msc"
-TAB2IMG_DIR="$PROJECT_DIR/Tab2img"
-DATASETS_DIR="$PROJECT_DIR/tabularDataset"
-VENV_PATH="$PROJECT_DIR/venvMsc/bin/activate"
+BASELINE_DIR="$PROJECT_DIR/Tab2img/Baseline"          # 🆕 NEW BASE DIR
+DATASETS_DIR="$PROJECT_DIR/tabularDataset"            # ✅ SAME
+VENV_PATH="$PROJECT_DIR/venvMsc/bin/activate"         # ✅ SAME
 
-# Baseline script (SAVE your Python code as this file)
-BASELINE_SCRIPT="$TAB2IMG_DIR/baseline_comparison.py"
-BATCH_SCRIPT="$TAB2IMG_DIR/run_baseline_batch.py"  # You'll need to create this
+# Baseline scripts (in Baseline directory)
+BASELINE_SCRIPT="$BASELINE_DIR/baseline_comparison.py"
+BATCH_SCRIPT="$BASELINE_DIR/run_baseline_batch.py"
 
-# Output
-RESULTS_BASE="$TAB2IMG_DIR/baseline_results"
-JOB_LOGS_DIR="$TAB2IMG_DIR/job_logs"
+# Output directories (INSIDE Baseline folder)
+RESULTS_BASE="$BASELINE_DIR/results"
+JOB_LOGS_DIR="$BASELINE_DIR/job_logs"
 
 # Timeout configuration
 TIMEOUT_DEFAULT=7200  # 2 hours per dataset (faster than Table2Image)
 
 #=======================================================================
-# Job Information
+# Job Information (UPDATED PATHS)
 #=======================================================================
 echo "=========================================="
 echo "BASELINE MODELS COMPARISON - 80 DATASETS"
 echo "=========================================="
+echo "📁 Working in: $BASELINE_DIR"
+echo "📁 Datasets:  $DATASETS_DIR"
 echo "XGBoost | LightGBM | PyTorch MLP"
-echo "Job ID: $SLURM_JOB_ID"
-echo "Started: $(date)"
-echo "Node: $(hostname)"
-echo "Datasets: 80 datasets"
+echo "Job ID: $SLURM_JOB_ID | Started: $(date)"
 echo "Configuration:"
 echo "  - Models: XGBoost, LightGBM, PyTorch MLP"
 echo "  - Hyperparameter tuning: Enabled"
 echo "  - Timeout: 2 hours per dataset"
-echo "  - CPUs: 8 cores"
-echo "  - Memory: 32GB"
+echo "  - CPUs: 8 cores | Memory: 32GB"
 echo "=========================================="
 echo ""
 
@@ -81,7 +75,7 @@ echo "✅ Directories ready"
 echo ""
 
 #=======================================================================
-# Verify Files & Datasets
+# Verify Files & Datasets (UPDATED PATHS)
 #=======================================================================
 echo "Verifying environment..."
 
@@ -98,7 +92,7 @@ fi
 
 if [ ! -f "$BATCH_SCRIPT" ]; then
     echo "❌ ERROR: Batch script not found: $BATCH_SCRIPT"
-    echo "💡 Create run_baseline_batch.py (see below)"
+    echo "💡 Create run_baseline_batch.py in: $BASELINE_DIR/"
     exit 1
 fi
 
@@ -144,18 +138,21 @@ echo "✅ Environment ready"
 echo ""
 
 #=======================================================================
-# Execute Batch Processing
+# Execute Batch Processing (UPDATED PATHS)
 #=======================================================================
 echo "=========================================="
 echo "🚀 STARTING BASELINE COMPARISON"
 echo "=========================================="
+echo "📁 Scripts: $BASELINE_DIR/"
+echo "📁 Output:  $RESULTS_BASE/"
 echo "Command:"
 echo "python $BATCH_SCRIPT \\"
 echo "  --datasets_dir $DATASETS_DIR \\"
 echo "  --output_base $RESULTS_BASE \\"
 echo "  --job_id $SLURM_JOB_ID \\"
 echo "  --script_path $BASELINE_SCRIPT \\"
-echo "  --timeout $TIMEOUT_DEFAULT"
+echo "  --timeout $TIMEOUT_DEFAULT \\"
+echo "  --skip_tuning False"
 echo ""
 echo "=========================================="
 echo ""
@@ -172,7 +169,7 @@ python "$BATCH_SCRIPT" \
 EXIT_CODE=$?
 
 #=======================================================================
-# Final Summary
+# Final Summary (UPDATED PATHS)
 #=======================================================================
 echo ""
 echo "=========================================="
@@ -191,16 +188,19 @@ if [ $EXIT_CODE -eq 0 ]; then
     echo "📂 Results location:"
     echo "    $RESULT_DIR/"
     echo ""
-    echo "📊 Per-dataset outputs:"
-    echo "    ├── balance-scale/baseline_comparison.csv"
-    echo "    ├── balance-scale/baseline_results.json"
-    echo "    ├── balance-scale/baseline_comparison.png"
-    echo "    ├── tic-tac-toe/baseline_comparison.csv"
-    echo "    └── ... (80 datasets)"
+    echo "📊 Directory structure:"
+    echo "    Baseline/"
+    echo "    ├── results/baseline_JOBXXXX/"
+    echo "    │   ├── balance-scale/baseline_comparison.csv"
+    echo "    │   ├── balance-scale/baseline_comparison.png"
+    echo "    │   └── ... (80 datasets)"
+    echo "    ├── table2image_results/   (T2I original)"
+    echo "    ├── t2i_vif_results/       (VIF T2I)"
+    echo "    └── job_logs/"
     echo ""
     
     # Count completed datasets
-    COMPLETED=$(find "$RESULT_DIR" -name "baseline_comparison.csv" | wc -l)
+    COMPLETED=$(find "$RESULT_DIR" -name "baseline_comparison.csv" 2>/dev/null | wc -l)
     echo "✅ $COMPLETED/80 datasets completed"
     echo ""
     
@@ -211,7 +211,8 @@ if [ $EXIT_CODE -eq 0 ]; then
         echo ""
     fi
     
-    echo "🎉 Baseline comparison ready for Table2Image analysis!"
+    echo "🎉 Baselines ready for Table2Image comparison!"
+    echo "📈 Compare with: table2image_results/ | t2i_vif_results/"
     
 else
     echo "⚠️  Some datasets may have failed"
