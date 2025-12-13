@@ -1,61 +1,222 @@
 #!/bin/bash
 
-#SBATCH --job-name=baseline_comparison
-#SBATCH --time=24:00:00
-#SBATCH --mem=32G
+#=======================================================================
+# PRODUCTION SLURM SCRIPT - Baseline Models Comparison (XGBoost/LightGBM/PyTorch MLP)
+#=======================================================================
+# For 80 tabular datasets - compares against Table2Image baseline
+# Enhanced with:
+# - Hyperparameter tuning (optional --skip_tuning flag)
+# - Model comparison visualizations
+# - CSV/JSON outputs per dataset
+# - Adaptive resource allocation
+#=======================================================================
+
+#SBATCH --account=def-arashmoh
+#SBATCH --job-name=BASELINE_COMP
+#SBATCH --nodes=1
 #SBATCH --cpus-per-task=8
-#SBATCH --output=logs/baseline_%A_%a.out
-#SBATCH --error=logs/baseline_%A_%a.err
+#SBATCH --mem=32G
+#SBATCH --time=48:00:00
 
-# Create logs directory
-mkdir -p logs
-mkdir -p baseline_results
+#SBATCH --output=/project/def-arashmoh/shahab33/Msc/Tab2img/job_logs/baseline_%A.out
+#SBATCH --error=/project/def-arashmoh/shahab33/Msc/Tab2img/job_logs/baseline_%A.err
 
-# Dataset paths - adjust these to your dataset locations
-DATASETS=(
-    "datasets/balance-scale/balance-scale.csv"
-    "datasets/diabetes/diabetes.csv"
-    "datasets/iris/iris.csv"
-    # Add more dataset paths here
-)
+#SBATCH --mail-user=aminhajjr@gmail.com
+#SBATCH --mail-type=BEGIN,END,FAIL
 
-# Activate your Python environment
-# source /path/to/your/venv/bin/activate
+#=======================================================================
+# Configuration (SAME as your Table2Image script)
+#=======================================================================
+PROJECT_DIR="/project/def-arashmoh/shahab33/Msc"
+TAB2IMG_DIR="$PROJECT_DIR/Tab2img"
+DATASETS_DIR="$PROJECT_DIR/tabularDataset"
+VENV_PATH="$PROJECT_DIR/venvMsc/bin/activate"
 
-echo "========================================"
-echo "BASELINE MODELS COMPARISON BATCH RUN"
-echo "========================================"
-echo "Start time: $(date)"
-echo "Number of datasets: ${#DATASETS[@]}"
+# Baseline script (SAVE your Python code as this file)
+BASELINE_SCRIPT="$TAB2IMG_DIR/baseline_comparison.py"
+BATCH_SCRIPT="$TAB2IMG_DIR/run_baseline_batch.py"  # You'll need to create this
+
+# Output
+RESULTS_BASE="$TAB2IMG_DIR/baseline_results"
+JOB_LOGS_DIR="$TAB2IMG_DIR/job_logs"
+
+# Timeout configuration
+TIMEOUT_DEFAULT=7200  # 2 hours per dataset (faster than Table2Image)
+
+#=======================================================================
+# Job Information
+#=======================================================================
+echo "=========================================="
+echo "BASELINE MODELS COMPARISON - 80 DATASETS"
+echo "=========================================="
+echo "XGBoost | LightGBM | PyTorch MLP"
+echo "Job ID: $SLURM_JOB_ID"
+echo "Started: $(date)"
+echo "Node: $(hostname)"
+echo "Datasets: 80 datasets"
+echo "Configuration:"
+echo "  - Models: XGBoost, LightGBM, PyTorch MLP"
+echo "  - Hyperparameter tuning: Enabled"
+echo "  - Timeout: 2 hours per dataset"
+echo "  - CPUs: 8 cores"
+echo "  - Memory: 32GB"
+echo "=========================================="
 echo ""
 
-# Run comparison for each dataset
-for dataset in "${DATASETS[@]}"; do
-    echo "----------------------------------------"
-    echo "Processing: $dataset"
-    echo "----------------------------------------"
+#=======================================================================
+# CPU/GPU Information
+#=======================================================================
+echo "System Information:"
+nvidia-smi --query-gpu=name,memory.total,driver_version --format=csv,noheader || echo "No GPU detected (CPU-only fine for baselines)"
+echo "CPU cores: $(nproc)"
+echo ""
+
+#=======================================================================
+# Setup
+#=======================================================================
+echo "Creating directories..."
+mkdir -p "$JOB_LOGS_DIR"
+mkdir -p "$RESULTS_BASE"
+echo "✅ Directories ready"
+echo ""
+
+#=======================================================================
+# Verify Files & Datasets
+#=======================================================================
+echo "Verifying environment..."
+
+if [ ! -d "$DATASETS_DIR" ]; then
+    echo "❌ ERROR: Datasets not found: $DATASETS_DIR"
+    exit 1
+fi
+
+if [ ! -f "$BASELINE_SCRIPT" ]; then
+    echo "❌ ERROR: Baseline script not found: $BASELINE_SCRIPT"
+    echo "💡 Save your Python code as: $BASELINE_SCRIPT"
+    exit 1
+fi
+
+if [ ! -f "$BATCH_SCRIPT" ]; then
+    echo "❌ ERROR: Batch script not found: $BATCH_SCRIPT"
+    echo "💡 Create run_baseline_batch.py (see below)"
+    exit 1
+fi
+
+DATASET_COUNT=$(find "$DATASETS_DIR" -mindepth 1 -maxdepth 1 -type d | wc -l)
+echo "✅ Found $DATASET_COUNT dataset folders"
+echo ""
+
+#=======================================================================
+# Load Environment (SAME as Table2Image)
+#=======================================================================
+echo "Loading modules..."
+module purge
+module load StdEnv/2023
+module load python/3.11
+module load cuda/12.2
+echo "✅ Modules loaded"
+echo ""
+
+echo "Activating virtual environment..."
+source "$VENV_PATH"
+echo "✅ Virtual environment active"
+echo ""
+
+echo "Python environment check:"
+python --version
+python -c "
+import numpy, pandas, sklearn, xgboost, lightgbm, torch
+print(f'NumPy: {numpy.__version__}')
+print(f'Pandas: {pandas.__version__}')
+print(f'Sklearn: {sklearn.__version__}')
+print(f'XGBoost: {xgboost.__version__}')
+print(f'LightGBM: {lightgbm.__version__}')
+print(f'PyTorch: {torch.__version__}')
+print(f'CUDA available: {torch.cuda.is_available()}')
+"
+
+if [ $? -ne 0 ]; then
+    echo "❌ ERROR: Required packages missing!"
+    exit 1
+fi
+
+echo "✅ Environment ready"
+echo ""
+
+#=======================================================================
+# Execute Batch Processing
+#=======================================================================
+echo "=========================================="
+echo "🚀 STARTING BASELINE COMPARISON"
+echo "=========================================="
+echo "Command:"
+echo "python $BATCH_SCRIPT \\"
+echo "  --datasets_dir $DATASETS_DIR \\"
+echo "  --output_base $RESULTS_BASE \\"
+echo "  --job_id $SLURM_JOB_ID \\"
+echo "  --script_path $BASELINE_SCRIPT \\"
+echo "  --timeout $TIMEOUT_DEFAULT"
+echo ""
+echo "=========================================="
+echo ""
+
+# Run batch processor
+python "$BATCH_SCRIPT" \
+    --datasets_dir "$DATASETS_DIR" \
+    --output_base "$RESULTS_BASE" \
+    --job_id "$SLURM_JOB_ID" \
+    --script_path "$BASELINE_SCRIPT" \
+    --timeout "$TIMEOUT_DEFAULT" \
+    --skip_tuning False  # Enable tuning for best results
+
+EXIT_CODE=$?
+
+#=======================================================================
+# Final Summary
+#=======================================================================
+echo ""
+echo "=========================================="
+echo "BASELINE COMPARISON COMPLETE"
+echo "=========================================="
+echo "Finished: $(date)"
+echo "Exit code: $EXIT_CODE"
+echo ""
+
+if [ $EXIT_CODE -eq 0 ]; then
+    # Find result directory
+    RESULT_DIR=$(find "$RESULTS_BASE" -maxdepth 1 -type d -name "*_JOB${SLURM_JOB_ID}" | head -1)
     
-    # Check if dataset exists
-    if [ ! -f "$dataset" ]; then
-        echo "WARNING: Dataset not found: $dataset"
-        echo "Skipping..."
-        continue
+    echo "✅ SUCCESS! All baselines completed"
+    echo ""
+    echo "📂 Results location:"
+    echo "    $RESULT_DIR/"
+    echo ""
+    echo "📊 Per-dataset outputs:"
+    echo "    ├── balance-scale/baseline_comparison.csv"
+    echo "    ├── balance-scale/baseline_results.json"
+    echo "    ├── balance-scale/baseline_comparison.png"
+    echo "    ├── tic-tac-toe/baseline_comparison.csv"
+    echo "    └── ... (80 datasets)"
+    echo ""
+    
+    # Count completed datasets
+    COMPLETED=$(find "$RESULT_DIR" -name "baseline_comparison.csv" | wc -l)
+    echo "✅ $COMPLETED/80 datasets completed"
+    echo ""
+    
+    # Show top performers if summary exists
+    if [ -f "$RESULT_DIR/summary_all_baselines.csv" ]; then
+        echo "🏆 Top 5 datasets by XGBoost accuracy:"
+        head -6 "$RESULT_DIR/summary_all_baselines.csv"
+        echo ""
     fi
     
-    # Run baseline comparison
-    python baseline_models_comparison.py \
-        --data "$dataset" \
-        --output_dir baseline_results \
-        --skip_tuning
+    echo "🎉 Baseline comparison ready for Table2Image analysis!"
     
-    echo "Completed: $dataset"
-    echo ""
-done
+else
+    echo "⚠️  Some datasets may have failed"
+    echo "Check: $JOB_LOGS_DIR/baseline_${SLURM_JOB_ID}.err"
+fi
 
-echo "========================================"
-echo "BATCH RUN COMPLETE"
-echo "End time: $(date)"
-echo "========================================"
-
-# Generate aggregate report
-python aggregate_baseline_results.py --results_dir baseline_results
+echo "=========================================="
+exit $EXIT_CODE
