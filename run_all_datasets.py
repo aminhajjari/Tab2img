@@ -212,7 +212,8 @@ def run_single_dataset(dataset_path, subdirs, script_path, timeout):
             
     except subprocess.TimeoutExpired:
         elapsed = time.time() - start_time
-        print(f"⏱️  TIMEOUT after {elapsed:.1f}s ({timeout}s limit)")
+        print(f"⏱️  TIMEOUT after {elapsed:.1f}s ({effective_timeout}s limit)")
+
         return {
             'status': 'timeout',
             'dataset': dataset_name,
