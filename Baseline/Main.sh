@@ -3,7 +3,7 @@
 #=======================================================================
 # PRODUCTION SLURM SCRIPT - Main Experiment (Main.py)
 #=======================================================================
-# UPDATED to run Main.py directly
+# UPDATED to match new Main.py arguments
 # For 80 tabular datasets - Complete experiment pipeline
 #=======================================================================
 
@@ -32,7 +32,7 @@ VENV_PATH="$PROJECT_DIR/venvMsc/bin/activate"         # Virtual environment
 MAIN_SCRIPT="$BASELINE_DIR/Main.py"
 
 # Output directories
-RESULTS_BASE="$BASELINE_DIR/results"
+RESULTS_BASE="$BASELINE_DIR/baseline_results"
 JOB_LOGS_DIR="$BASELINE_DIR/job_logs"
 
 #=======================================================================
@@ -140,19 +140,21 @@ echo "📁 Logs: $JOB_LOGS_DIR"
 echo ""
 echo "Running command:"
 echo "python $MAIN_SCRIPT \\"
-echo "  --datasets_dir $DATASETS_DIR \\"
-echo "  --output_base $RESULTS_BASE \\"
-echo "  --job_id $SLURM_JOB_ID"
+echo "  --data_dir $DATASETS_DIR \\"
+echo "  --output_dir $RESULTS_BASE \\"
+echo "  --skip_tuning \\"
+echo "  --random_state 42"
 echo ""
 echo "=========================================="
 echo ""
 
-# Run Main.py with standard arguments
+# Run Main.py with CORRECTED arguments
 cd "$BASELINE_DIR"
 python "$MAIN_SCRIPT" \
-    --datasets_dir "$DATASETS_DIR" \
-    --output_base "$RESULTS_BASE" \
-    --job_id "$SLURM_JOB_ID"
+    --data_dir "$DATASETS_DIR" \
+    --output_dir "$RESULTS_BASE" \
+    --skip_tuning \
+    --random_state 42
 
 EXIT_CODE=$?
 
@@ -173,16 +175,27 @@ if [ $EXIT_CODE -eq 0 ]; then
     echo "📂 Results location:"
     echo "    $RESULTS_BASE/"
     echo ""
-    echo "📊 Expected outputs (depends on Main.py):"
-    echo "    ├── summary_all_baselines.csv"
-    echo "    ├── comparison_table.png"
-    echo "    ├── experiment_results.json"
-    echo "    └── dataset-wise results/"
+    echo "📊 Expected outputs:"
+    echo "    ├── [dataset1]/"
+    echo "    │   ├── baseline_comparison.csv"
+    echo "    │   ├── baseline_comparison.png"
+    echo "    │   └── baseline_results.json"
+    echo "    ├── [dataset2]/"
+    echo "    │   ├── baseline_comparison.csv"
+    echo "    │   ├── baseline_comparison.png"
+    echo "    │   └── baseline_results.json"
+    echo "    └── ..."
     echo ""
     
     # Show recent results
     echo "📁 Latest results:"
-    ls -la "$RESULTS_BASE" | tail -10
+    echo "Processed datasets:"
+    find "$RESULTS_BASE" -maxdepth 1 -type d | tail -10
+    echo ""
+    
+    # Count successful datasets
+    SUCCESS_COUNT=$(find "$RESULTS_BASE" -name "baseline_results.json" | wc -l)
+    echo "✅ Successfully processed $SUCCESS_COUNT datasets"
     echo ""
     
     echo "🎉 Main experiment pipeline complete!"
