@@ -17,6 +17,7 @@
 #SBATCH --output=/project/def-arashmoh/shahab33/Msc/Tab2img/Baseline/job_logs/main_%A.out
 #SBATCH --error=/project/def-arashmoh/shahab33/Msc/Tab2img/Baseline/job_logs/main_%A.err
 
+
 #SBATCH --mail-user=aminhajjr@gmail.com
 #SBATCH --mail-type=BEGIN,END,FAIL
 
@@ -209,4 +210,5 @@ else
 fi
 
 echo "=========================================="
+
 exit $EXIT_CODE
