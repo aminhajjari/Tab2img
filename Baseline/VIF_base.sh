@@ -3,12 +3,8 @@
 #=======================================================================
 # PRODUCTION SLURM SCRIPT - Table2Image VIF (Variance Inflation Factor)
 #=======================================================================
+# UPDATED for NEW Baseline directory structure
 # For 80 tabular datasets - VIF-Enhanced Table2Image
-# Enhanced with:
-# - VIF-based weight initialization for multicollinearity
-# - AdamW optimizer (weight decay 1e-4)
-# - FashionMNIST + MNIST + VIF embeddings
-# - Model checkpointing + comprehensive metrics
 #=======================================================================
 
 #SBATCH --account=def-arashmoh
@@ -19,42 +15,41 @@
 #SBATCH --mem=64G
 #SBATCH --time=96:00:00
 
-#SBATCH --output=/project/def-arashmoh/shahab33/Msc/Tab2img/job_logs/t2i_vif_%A.out
-#SBATCH --error=/project/def-arashmoh/shahab33/Msc/Tab2img/job_logs/t2i_vif_%A.err
+#SBATCH --output=/project/def-arashmoh/shahab33/Msc/Tab2img/Baseline/job_logs/t2i_vif_%A.out
+#SBATCH --error=/project/def-arashmoh/shahab33/Msc/Tab2img/Baseline/job_logs/t2i_vif_%A.err
 
 #SBATCH --mail-user=aminhajjr@gmail.com
 #SBATCH --mail-type=BEGIN,END,FAIL
 
 #=======================================================================
-# Configuration (IDENTICAL paths)
+# ✅ UPDATED Configuration (NEW BASELINE DIRECTORY)
 #=======================================================================
 PROJECT_DIR="/project/def-arashmoh/shahab33/Msc"
-TAB2IMG_DIR="$PROJECT_DIR/Tab2img"
-DATASETS_DIR="$PROJECT_DIR/tabularDataset"
-VENV_PATH="$PROJECT_DIR/venvMsc/bin/activate"
+BASELINE_DIR="$PROJECT_DIR/Tab2img/Baseline"          # 🆕 NEW BASE DIR
+DATASETS_DIR="$PROJECT_DIR/tabularDataset"            # ✅ SAME
+VENV_PATH="$PROJECT_DIR/venvMsc/bin/activate"         # ✅ SAME
 
-# VIF-Enhanced Table2Image script
-VIF_SCRIPT="$TAB2IMG_DIR/table2image_vif.py"
-BATCH_SCRIPT="$TAB2IMG_DIR/run_t2i_vif_batch.py"
+# VIF-Enhanced Table2Image scripts (in Baseline directory)
+VIF_SCRIPT="$BASELINE_DIR/table2image_vif.py"
+BATCH_SCRIPT="$BASELINE_DIR/run_t2i_vif_batch.py"
 
-# Output directories
-RESULTS_BASE="$TAB2IMG_DIR/t2i_vif_results"
-JOB_LOGS_DIR="$TAB2IMG_DIR/job_logs"
+# Output directories (INSIDE Baseline folder)
+RESULTS_BASE="$BASELINE_DIR/t2i_vif_results"
+JOB_LOGS_DIR="$BASELINE_DIR/job_logs"
 
 # Timeout: 4.5 hours (VIF computation adds overhead)
 TIMEOUT_DEFAULT=16200
 
 #=======================================================================
-# Job Information
+# Job Information (UPDATED PATHS)
 #=======================================================================
 echo "=========================================="
 echo "TABLE2IMAGE VIF-ENHANCED - 80 DATASETS"
 echo "=========================================="
+echo "📁 Working in: $BASELINE_DIR"
+echo "📁 Datasets:  $DATASETS_DIR"
 echo "CVAE + VIF Embeddings + Tabular + FashionMNIST/MNIST"
-echo "Job ID: $SLURM_JOB_ID"
-echo "Started: $(date)"
-echo "Node: $(hostname)"
-echo "Datasets: 80 datasets"
+echo "Job ID: $SLURM_JOB_ID | Started: $(date)"
 echo "Configuration:"
 echo "  - Model: CVAEWithTabEmbedding + VIFInitialization"
 echo "  - VIF: Multicollinearity-aware weight init"
@@ -81,7 +76,7 @@ echo "✅ Directories ready"
 echo ""
 
 #=======================================================================
-# Verify Files & Datasets
+# Verify Files & Datasets (UPDATED PATHS)
 #=======================================================================
 echo "Verifying environment..."
 
@@ -98,7 +93,7 @@ fi
 
 if [ ! -f "$BATCH_SCRIPT" ]; then
     echo "❌ ERROR: Batch script not found: $BATCH_SCRIPT"
-    echo "💡 Create run_t2i_vif_batch.py (code below)"
+    echo "💡 Create run_t2i_vif_batch.py in: $BASELINE_DIR/"
     exit 1
 fi
 
@@ -107,7 +102,7 @@ echo "✅ Found $DATASET_COUNT dataset folders"
 echo ""
 
 #=======================================================================
-# Load Environment
+# Load Environment (UNCHANGED)
 #=======================================================================
 echo "Loading modules..."
 module purge
@@ -145,11 +140,13 @@ echo "✅ Environment ready (VIF computation enabled)"
 echo ""
 
 #=======================================================================
-# Execute Batch Processing
+# Execute Batch Processing (UPDATED PATHS)
 #=======================================================================
 echo "=========================================="
 echo "🚀 STARTING TABLE2IMAGE-VIF BATCH"
 echo "=========================================="
+echo "📁 Scripts: $BASELINE_DIR/"
+echo "📁 Output:  $RESULTS_BASE/"
 echo "VIF-Enhanced features:"
 echo "  ✅ Variance Inflation Factor embeddings"
 echo "  ✅ Inverse-VIF weight initialization"
@@ -177,7 +174,7 @@ python "$BATCH_SCRIPT" \
 EXIT_CODE=$?
 
 #=======================================================================
-# Final Summary
+# Final Summary (UPDATED PATHS)
 #=======================================================================
 echo ""
 echo "=========================================="
@@ -195,16 +192,20 @@ if [ $EXIT_CODE -eq 0 ]; then
     echo "📂 Results location:"
     echo "    $RESULT_DIR/"
     echo ""
-    echo "📊 Per-dataset outputs:"
-    echo "    ├── balance-scale/balance-scale.pt (best model)"
-    echo "    ├── balance-scale/vif_summary.json"
-    echo "    ├── balance-scale/performance_history.csv"
-    echo "    ├── tic-tac-toe/..."
-    echo "    └── ... (80 datasets)"
+    echo "📊 Directory structure:"
+    echo "    Baseline/"
+    echo "    ├── t2i_vif_results/vif_JOBXXXX/"
+    echo "    │   ├── balance-scale.pt"
+    echo "    │   ├── balance-scale/vif_summary.json"
+    echo "    │   ├── summary_vif_results.csv"
+    echo "    │   └── ... (80 datasets)"
+    echo "    ├── table2image_results/  (original T2I)"
+    echo "    ├── results/             (baselines)"
+    echo "    └── job_logs/"
     echo ""
     
     # Count completed models
-    COMPLETED=$(find "$RESULT_DIR" -name "*.pt" | wc -l)
+    COMPLETED=$(find "$RESULT_DIR" -name "*.pt" 2>/dev/null | wc -l)
     echo "✅ $COMPLETED/80 VIF models trained"
     echo ""
     
@@ -216,7 +217,7 @@ if [ $EXIT_CODE -eq 0 ]; then
     fi
     
     echo "🎉 VIF-enhanced Table2Image ready for comparison!"
-    echo "📈 Compare with: baseline_results/ | table2image_results/"
+    echo "📈 Compare with: results/ | table2image_results/"
     
 else
     echo "⚠️  Some datasets may have failed (VIF computation intensive)"
