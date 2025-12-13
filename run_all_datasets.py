@@ -121,32 +121,40 @@ def run_single_dataset(dataset_path, subdirs, script_path, timeout):
     Run Table2Image-VIF on a single dataset with interpretability
     """
     dataset_name = dataset_path.parent.name
-    
+
     print(f"\n{'='*70}")
     print(f"Processing: {dataset_name}")
     print(f"{'='*70}")
     print(f"Folder: {dataset_path.parent.name}")
     print(f"File: {dataset_path.name}")
     print(f"Features: Weight Decay (1e-4) + Dual SHAP Interpretability")
-    
-    # 🆕 Build command with --interp_root for centralized interpretability
+
+    # --- per‑dataset overrides (CIFAR‑10 special case) ---
+    effective_timeout = timeout
+    num_images = '5'
+
+    # Adjust these names if your CIFAR folder/file is different
+    if dataset_name.lower() in ['cifar', 'cifar-10', 'cifar10']:
+        print(f"🔧 Detected CIFAR‑10 – increasing timeout and reducing images per class")
+        effective_timeout = max(timeout, 14400)  # at least 4 hours
+        num_images = '3'                          # lighter interpretability for CIFAR
+
+    # Build command with per‑dataset num_images
     cmd = [
         'python', script_path,
         '--data', str(dataset_path),
-        '--num_images', '5',
-        '--interp_root', subdirs['interpretability']  # 🆕 Centralized output
+        '--num_images', num_images,
+        '--interp_root', subdirs['interpretability']
     ]
-    
-    # Run with timeout
+
     start_time = time.time()
     try:
         result = subprocess.run(
             cmd,
-            timeout=timeout,
+            timeout=effective_timeout,
             capture_output=True,
             text=True
         )
-        
         elapsed = time.time() - start_time
         
         if result.returncode == 0:
