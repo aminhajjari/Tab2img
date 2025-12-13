@@ -3,58 +3,55 @@
 #=======================================================================
 # PRODUCTION SLURM SCRIPT - Table2Image (Base paper)
 #=======================================================================
-# UPDATED for NEW Baseline directory structure
+# UPDATED to run run.py directly
 # For 80 tabular datasets - Official Table2Image implementation
 #=======================================================================
 
 #SBATCH --account=def-arashmoh
-#SBATCH --job-name=T2I_ORIGINAL
+#SBATCH --job-name=T2I_RUN
 #SBATCH --nodes=1
 #SBATCH --gpus-per-node=a100:1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=64G
 #SBATCH --time=96:00:00
 
-#SBATCH --output=/project/def-arashmoh/shahab33/Msc/Tab2img/Baseline/job_logs/table2image_%A.out
-#SBATCH --error=/project/def-arashmoh/shahab33/Msc/Tab2img/Baseline/job_logs/table2image_%A.err
+#SBATCH --output=/project/def-arashmoh/shahab33/Msc/Tab2img/Baseline/job_logs/run_%A.out
+#SBATCH --error=/project/def-arashmoh/shahab33/Msc/Tab2img/Baseline/job_logs/run_%A.err
 
 #SBATCH --mail-user=aminhajjr@gmail.com
 #SBATCH --mail-type=BEGIN,END,FAIL
 
 #=======================================================================
-# ✅ UPDATED Configuration (NEW BASELINE DIRECTORY)
+# ✅ UPDATED Configuration (RUNS run.PY)
 #=======================================================================
 PROJECT_DIR="/project/def-arashmoh/shahab33/Msc"
-BASELINE_DIR="$PROJECT_DIR/Tab2img/Baseline"          # 🆕 NEW BASE DIR
-DATASETS_DIR="$PROJECT_DIR/tabularDataset"            # ✅ SAME
-VENV_PATH="$PROJECT_DIR/venvMsc/bin/activate"         # ✅ SAME
+BASELINE_DIR="$PROJECT_DIR/Tab2img/Baseline"          # Main working directory
+DATASETS_DIR="$PROJECT_DIR/tabularDataset"            # Datasets location
+VENV_PATH="$PROJECT_DIR/venvMsc/bin/activate"         # Virtual environment
 
-# Table2Image scripts (in Baseline directory)
-T2I_SCRIPT="$BASELINE_DIR/table2image_original.py"
-BATCH_SCRIPT="$BASELINE_DIR/run_t2i_batch.py"
+# run script (THIS IS WHAT RUNS)
+RUN_SCRIPT="$BASELINE_DIR/run.py"
 
-# Output directories (INSIDE Baseline folder)
+# Output directories
 RESULTS_BASE="$BASELINE_DIR/table2image_results"
 JOB_LOGS_DIR="$BASELINE_DIR/job_logs"
 
-# Timeout: 4 hours per dataset
-TIMEOUT_DEFAULT=14400
-
 #=======================================================================
-# Job Information (UPDATED PATHS)
+# Job Information
 #=======================================================================
 echo "=========================================="
-echo "TABLE2IMAGE ORIGINAL - 80 DATASETS"
+echo "TABLE2IMAGE EXPERIMENT - Running run.py"
 echo "=========================================="
 echo "📁 Working in: $BASELINE_DIR"
-echo "📁 Datasets:  $DATASETS_DIR"
-echo "CVAE + Tabular Embeddings + FashionMNIST/MNIST"
+echo "📁 Run script: $RUN_SCRIPT"
+echo "📁 Datasets: $DATASETS_DIR"
 echo "Job ID: $SLURM_JOB_ID | Started: $(date)"
 echo "Configuration:"
+echo "  - Script: run.py (Table2Image pipeline)"
 echo "  - Model: CVAEWithTabEmbedding (50 epochs)"
 echo "  - Images: FashionMNIST (0-9) + MNIST (10-19)"
 echo "  - Optimizer: AdamW (lr=0.001)"
-echo "  - Timeout: 4 hours/dataset | GPU: A100"
+echo "  - GPU: A100 | CPUs: 8 cores | Memory: 64GB"
 echo "=========================================="
 echo ""
 
@@ -75,7 +72,7 @@ echo "✅ Directories ready"
 echo ""
 
 #=======================================================================
-# Verify Files & Datasets (UPDATED PATHS)
+# Verify run Script & Datasets
 #=======================================================================
 echo "Verifying environment..."
 
@@ -84,24 +81,19 @@ if [ ! -d "$DATASETS_DIR" ]; then
     exit 1
 fi
 
-if [ ! -f "$T2I_SCRIPT" ]; then
-    echo "❌ ERROR: Table2Image script not found: $T2I_SCRIPT"
-    echo "💡 Save your Python code as: $T2I_SCRIPT"
-    exit 1
-fi
-
-if [ ! -f "$BATCH_SCRIPT" ]; then
-    echo "❌ ERROR: Batch script not found: $BATCH_SCRIPT"
-    echo "💡 Create run_t2i_batch.py in: $BASELINE_DIR/"
+if [ ! -f "$RUN_SCRIPT" ]; then
+    echo "❌ ERROR: run.py not found: $RUN_SCRIPT"
+    echo "💡 Save your Table2Image script as: $RUN_SCRIPT"
     exit 1
 fi
 
 DATASET_COUNT=$(find "$DATASETS_DIR" -mindepth 1 -maxdepth 1 -type d | wc -l)
 echo "✅ Found $DATASET_COUNT dataset folders"
+echo "✅ run.py verified: $(ls -lh $RUN_SCRIPT)"
 echo ""
 
 #=======================================================================
-# Load Environment (UNCHANGED)
+# Load Environment
 #=======================================================================
 echo "Loading modules..."
 module purge
@@ -125,7 +117,7 @@ print(f'Torchvision: {torchvision.__version__}')
 print(f'CUDA available: {torch.cuda.is_available()}')
 if torch.cuda.is_available():
     print(f'GPU: {torch.cuda.get_device_name(0)}')
-print('✅ Table2Image dependencies OK')
+print('✅ Table2Image (run.py) dependencies OK')
 "
 
 if [ $? -ne 0 ]; then
@@ -137,80 +129,71 @@ echo "✅ Environment ready"
 echo ""
 
 #=======================================================================
-# Execute Batch Processing (UPDATED PATHS)
+# Execute run.py (PRIMARY EXECUTION)
 #=======================================================================
 echo "=========================================="
-echo "🚀 STARTING TABLE2IMAGE BATCH PROCESSING"
+echo "🚀 STARTING TABLE2IMAGE EXPERIMENT"
 echo "=========================================="
-echo "📁 Scripts: $BASELINE_DIR/"
-echo "📁 Output:  $RESULTS_BASE/"
-echo "Command:"
-echo "python $BATCH_SCRIPT \\"
+echo "📁 Run script: $RUN_SCRIPT"
+echo "📁 Datasets: $DATASETS_DIR"
+echo "📁 Output: $RESULTS_BASE"
+echo "📁 Logs: $JOB_LOGS_DIR"
+echo ""
+echo "Running command:"
+echo "python $RUN_SCRIPT \\"
 echo "  --datasets_dir $DATASETS_DIR \\"
 echo "  --output_base $RESULTS_BASE \\"
-echo "  --job_id $SLURM_JOB_ID \\"
-echo "  --script_path $T2I_SCRIPT \\"
-echo "  --timeout $TIMEOUT_DEFAULT"
+echo "  --job_id $SLURM_JOB_ID"
 echo ""
 echo "=========================================="
 echo ""
 
-python "$BATCH_SCRIPT" \
+# Run run.py with standard arguments
+cd "$BASELINE_DIR"
+python "$RUN_SCRIPT" \
     --datasets_dir "$DATASETS_DIR" \
     --output_base "$RESULTS_BASE" \
-    --job_id "$SLURM_JOB_ID" \
-    --script_path "$T2I_SCRIPT" \
-    --timeout "$TIMEOUT_DEFAULT"
+    --job_id "$SLURM_JOB_ID"
 
 EXIT_CODE=$?
 
 #=======================================================================
-# Final Summary (UPDATED PATHS)
+# Final Summary
 #=======================================================================
 echo ""
 echo "=========================================="
-echo "TABLE2IMAGE PRODUCTION RUN COMPLETE"
+echo "TABLE2IMAGE EXPERIMENT COMPLETE"
 echo "=========================================="
 echo "Finished: $(date)"
 echo "Exit code: $EXIT_CODE"
 echo ""
 
 if [ $EXIT_CODE -eq 0 ]; then
-    RESULT_DIR=$(find "$RESULTS_BASE" -maxdepth 1 -type d -name "*_JOB${SLURM_JOB_ID}" | head -1)
-    
-    echo "✅ SUCCESS! Table2Image completed"
+    echo "✅ SUCCESS! run.py completed successfully"
     echo ""
     echo "📂 Results location:"
-    echo "    $RESULT_DIR/"
+    echo "    $RESULTS_BASE/"
     echo ""
-    echo "📊 Directory structure:"
-    echo "    Baseline/"
-    echo "    ├── table2image_results/t2i_JOBXXXX/"
-    echo "    │   ├── balance-scale.pt"
+    echo "📊 Expected Table2Image outputs:"
+    echo "    ├── t2i_JOBXXXX/"
+    echo "    │   ├── balance-scale.pt (trained model)"
     echo "    │   ├── summary_t2i_results.csv"
     echo "    │   └── ... (80 datasets)"
-    echo "    ├── results/          (baselines)"
-    echo "    └── job_logs/"
     echo ""
     
-    # Count completed models
-    COMPLETED=$(find "$RESULT_DIR" -name "*.pt" 2>/dev/null | wc -l)
-    echo "✅ $COMPLETED/80 models trained"
+    # Show recent results
+    echo "📁 Latest Table2Image results:"
+    ls -la "$RESULTS_BASE" | tail -10
     echo ""
     
-    if [ -f "$RESULT_DIR/summary_t2i_results.csv" ]; then
-        echo "📊 Top 5 Table2Image performances:"
-        head -6 "$RESULT_DIR/summary_t2i_results.csv"
-        echo ""
-    fi
-    
-    echo "🎉 Table2Image ready alongside baselines!"
+    echo "🎉 Original Table2Image ready for comparison!"
+    echo "📈 Compare with: results/ | t2i_vif_results/"
     
 else
-    echo "⚠️  Some datasets may have failed"
+    echo "⚠️  run.py failed with exit code $EXIT_CODE"
     echo "Check logs:"
-    echo "    $JOB_LOGS_DIR/table2image_${SLURM_JOB_ID}.out"
-    echo "    $JOB_LOGS_DIR/table2image_${SLURM_JOB_ID}.err"
+    echo "    $JOB_LOGS_DIR/run_${SLURM_JOB_ID}.out"
+    echo "    $JOB_LOGS_DIR/run_${SLURM_JOB_ID}.err"
 fi
 
 echo "=========================================="
