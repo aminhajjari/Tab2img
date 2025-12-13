@@ -1,14 +1,10 @@
 #!/bin/bash
 
 #=======================================================================
-# PRODUCTION SLURM SCRIPT - Table2Image (CVAE with Tabular Embeddings)
+# PRODUCTION SLURM SCRIPT - Table2Image (Base paper)
 #=======================================================================
+# UPDATED for NEW Baseline directory structure
 # For 80 tabular datasets - Official Table2Image implementation
-# Enhanced with:
-# - AdamW optimizer (weight decay 1e-4)
-# - FashionMNIST + MNIST image supervision
-# - Synchronized tabular-image datasets
-# - 50 epochs, GPU-accelerated
 #=======================================================================
 
 #SBATCH --account=def-arashmoh
@@ -19,48 +15,46 @@
 #SBATCH --mem=64G
 #SBATCH --time=96:00:00
 
-#SBATCH --output=/project/def-arashmoh/shahab33/Msc/Tab2img/job_logs/table2image_%A.out
-#SBATCH --error=/project/def-arashmoh/shahab33/Msc/Tab2img/job_logs/table2image_%A.err
+#SBATCH --output=/project/def-arashmoh/shahab33/Msc/Tab2img/Baseline/job_logs/table2image_%A.out
+#SBATCH --error=/project/def-arashmoh/shahab33/Msc/Tab2img/Baseline/job_logs/table2image_%A.err
 
 #SBATCH --mail-user=aminhajjr@gmail.com
 #SBATCH --mail-type=BEGIN,END,FAIL
 
 #=======================================================================
-# Configuration (SAME paths as your previous scripts)
+# ✅ UPDATED Configuration (NEW BASELINE DIRECTORY)
 #=======================================================================
-PROJECT_DIR="/project/def-arashmoh/shahab33/Msc/Tab2img/Baseline"
-TAB2IMG_DIR="$PROJECT_DIR/Tab2img"
-DATASETS_DIR="$PROJECT_DIR/tabularDataset"
-VENV_PATH="$PROJECT_DIR/venvMsc/bin/activate"
+PROJECT_DIR="/project/def-arashmoh/shahab33/Msc"
+BASELINE_DIR="$PROJECT_DIR/Tab2img/Baseline"          # 🆕 NEW BASE DIR
+DATASETS_DIR="$PROJECT_DIR/tabularDataset"            # ✅ SAME
+VENV_PATH="$PROJECT_DIR/venvMsc/bin/activate"         # ✅ SAME
 
-# Table2Image script (SAVE your Python code as this file)
-T2I_SCRIPT="$TAB2IMG_DIR/table2image_original.py"
-BATCH_SCRIPT="$TAB2IMG_DIR/run_t2i_batch.py"  # Batch processor
+# Table2Image scripts (in Baseline directory)
+T2I_SCRIPT="$BASELINE_DIR/table2image_original.py"
+BATCH_SCRIPT="$BASELINE_DIR/run_t2i_batch.py"
 
-# Output directories
-RESULTS_BASE="$TAB2IMG_DIR/table2image_results"
-JOB_LOGS_DIR="$TAB2IMG_DIR/job_logs"
+# Output directories (INSIDE Baseline folder)
+RESULTS_BASE="$BASELINE_DIR/table2image_results"
+JOB_LOGS_DIR="$BASELINE_DIR/job_logs"
 
-# Timeout: 4 hours per dataset (Table2Image is slower due to image processing)
+# Timeout: 4 hours per dataset
 TIMEOUT_DEFAULT=14400
 
 #=======================================================================
-# Job Information
+# Job Information (UPDATED PATHS)
 #=======================================================================
 echo "=========================================="
 echo "TABLE2IMAGE ORIGINAL - 80 DATASETS"
 echo "=========================================="
+echo "📁 Working in: $BASELINE_DIR"
+echo "📁 Datasets:  $DATASETS_DIR"
 echo "CVAE + Tabular Embeddings + FashionMNIST/MNIST"
-echo "Job ID: $SLURM_JOB_ID"
-echo "Started: $(date)"
-echo "Node: $(hostname)"
-echo "Datasets: 80 datasets"
+echo "Job ID: $SLURM_JOB_ID | Started: $(date)"
 echo "Configuration:"
 echo "  - Model: CVAEWithTabEmbedding (50 epochs)"
 echo "  - Images: FashionMNIST (0-9) + MNIST (10-19)"
 echo "  - Optimizer: AdamW (lr=0.001)"
-echo "  - Timeout: 4 hours/dataset"
-echo "  - GPU: A100 | CPUs: 8 | Memory: 64GB"
+echo "  - Timeout: 4 hours/dataset | GPU: A100"
 echo "=========================================="
 echo ""
 
@@ -81,7 +75,7 @@ echo "✅ Directories ready"
 echo ""
 
 #=======================================================================
-# Verify Files & Datasets
+# Verify Files & Datasets (UPDATED PATHS)
 #=======================================================================
 echo "Verifying environment..."
 
@@ -98,7 +92,7 @@ fi
 
 if [ ! -f "$BATCH_SCRIPT" ]; then
     echo "❌ ERROR: Batch script not found: $BATCH_SCRIPT"
-    echo "💡 Create run_t2i_batch.py (code below)"
+    echo "💡 Create run_t2i_batch.py in: $BASELINE_DIR/"
     exit 1
 fi
 
@@ -107,7 +101,7 @@ echo "✅ Found $DATASET_COUNT dataset folders"
 echo ""
 
 #=======================================================================
-# Load Environment (IDENTICAL to your previous script)
+# Load Environment (UNCHANGED)
 #=======================================================================
 echo "Loading modules..."
 module purge
@@ -143,11 +137,13 @@ echo "✅ Environment ready"
 echo ""
 
 #=======================================================================
-# Execute Batch Processing
+# Execute Batch Processing (UPDATED PATHS)
 #=======================================================================
 echo "=========================================="
 echo "🚀 STARTING TABLE2IMAGE BATCH PROCESSING"
 echo "=========================================="
+echo "📁 Scripts: $BASELINE_DIR/"
+echo "📁 Output:  $RESULTS_BASE/"
 echo "Command:"
 echo "python $BATCH_SCRIPT \\"
 echo "  --datasets_dir $DATASETS_DIR \\"
@@ -169,7 +165,7 @@ python "$BATCH_SCRIPT" \
 EXIT_CODE=$?
 
 #=======================================================================
-# Final Summary
+# Final Summary (UPDATED PATHS)
 #=======================================================================
 echo ""
 echo "=========================================="
@@ -187,15 +183,18 @@ if [ $EXIT_CODE -eq 0 ]; then
     echo "📂 Results location:"
     echo "    $RESULT_DIR/"
     echo ""
-    echo "📊 Per-dataset outputs:"
-    echo "    ├── balance-scale.pt (trained model)"
-    echo "    ├── balance-scale/  (detailed logs)"
-    echo "    ├── tic-tac-toe.pt"
-    echo "    └── ... (80 datasets)"
+    echo "📊 Directory structure:"
+    echo "    Baseline/"
+    echo "    ├── table2image_results/t2i_JOBXXXX/"
+    echo "    │   ├── balance-scale.pt"
+    echo "    │   ├── summary_t2i_results.csv"
+    echo "    │   └── ... (80 datasets)"
+    echo "    ├── results/          (baselines)"
+    echo "    └── job_logs/"
     echo ""
     
     # Count completed models
-    COMPLETED=$(find "$RESULT_DIR" -name "*.pt" | wc -l)
+    COMPLETED=$(find "$RESULT_DIR" -name "*.pt" 2>/dev/null | wc -l)
     echo "✅ $COMPLETED/80 models trained"
     echo ""
     
@@ -205,7 +204,7 @@ if [ $EXIT_CODE -eq 0 ]; then
         echo ""
     fi
     
-    echo "🎉 Table2Image ready for baseline comparison!"
+    echo "🎉 Table2Image ready alongside baselines!"
     
 else
     echo "⚠️  Some datasets may have failed"
